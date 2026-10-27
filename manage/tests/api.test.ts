@@ -275,7 +275,13 @@ test(
           .status,
         401,
       );
-      for (const url of [
+    const pageHtml = await (await request("/manage")).text();
+    const assetPath = pageHtml.match(/src="(\/manage\/assets\/[^\"]+\.js)"/)?.[1];
+    assert.ok(assetPath, "Production scripts must use the /manage/ prefix");
+    const asset = await request(assetPath);
+    assert.equal(asset.status, 200);
+    assert.match(asset.headers.get("content-type") || "", /javascript/);
+    for (const url of [
         "/manage",
         "/manage/customers",
         "/manage/campaigns",

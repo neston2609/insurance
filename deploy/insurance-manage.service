@@ -1,0 +1,23 @@
+[Unit]
+Description=MFEC Insurance Management
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/insurance/manage
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/mfec-insurance-manage.env
+ExecStart=/usr/bin/node --import tsx server/index.ts
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mfec-insurance-manage /var/backups/mfec-insurance-manage
+
+[Install]
+WantedBy=multi-user.target

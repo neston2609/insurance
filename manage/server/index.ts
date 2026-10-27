@@ -100,6 +100,7 @@ app.get("/", (_request, response) => {
 
 if (process.env.NODE_ENV === "production") {
   const clientDir = path.resolve(__dirname, "..", "dist", "client");
+  app.use("/manage", express.static(clientDir, { redirect: false }));
   app.use(express.static(clientDir));
   app.use((_request, response) => {
     response.sendFile(path.join(clientDir, "index.html"));

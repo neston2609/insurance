@@ -1,0 +1,23 @@
+[Unit]
+Description=MFEC Insurance Demo Website
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/insurance/demo
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/mfec-insurance-demo.env
+ExecStart=/usr/bin/node --import tsx server/index.ts
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mfec-insurance-demo /var/backups/mfec-insurance-demo
+
+[Install]
+WantedBy=multi-user.target
