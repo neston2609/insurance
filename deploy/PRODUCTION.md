@@ -1,5 +1,6 @@
 # Production
 
+- Server: 18.142.92.2 (SSH user: ubuntu)
 - Demo: https://mfecinsure.demohub24.com/
 - Management: https://mfecinsure.demohub24.com/manage
 - Code: /opt/insurance/demo and /opt/insurance/manage
