@@ -98,6 +98,7 @@ test(
       assert.equal((await request("/")).headers.get("location"), "/manage");
       assert.equal((await request("/genesys")).status, 404);
       assert.equal((await request("/api/admin/customers")).status, 401);
+      assert.equal((await request("/api/admin/policies/all")).status, 401);
       assert.equal(
         (
           await request("/api/admin/auth/login", "POST", {
@@ -119,6 +120,59 @@ test(
       assert.match(setCookie, /HttpOnly/);
       assert.match(setCookie, /Secure/);
       const cookie = setCookie.split(";")[0];
+      const policyListResponse = await request(
+        "/api/admin/policies/all",
+        "GET",
+        undefined,
+        cookie,
+      );
+      assert.equal(policyListResponse.status, 200);
+      assert.equal(policyListResponse.headers.get("cache-control"), "no-store");
+      assert.match(policyListResponse.headers.get("vary") || "", /Cookie/);
+      const policyList = await policyListResponse.json();
+      const storedPolicies = JSON.parse(
+        await readFile(path.join(folder, "data/policies.json"), "utf8"),
+      );
+      const storedCustomers = JSON.parse(
+        await readFile(path.join(folder, "data/customers.json"), "utf8"),
+      );
+      const storedProducts = JSON.parse(
+        await readFile(path.join(folder, "data/products.json"), "utf8"),
+      );
+      const { CONTACT_COLUMNS, daysUntilExpiry, normalizeThaiPhone } =
+        await import("../server/domain/campaign-contact");
+      assert.equal(policyList.total, storedPolicies.length);
+      assert.equal(policyList.items.length, storedPolicies.length);
+      for (const item of policyList.items) {
+        assert.deepEqual(Object.keys(item), [...CONTACT_COLUMNS]);
+        const policy = storedPolicies.find(
+          (row: { policyId: string }) => row.policyId === item.policyId,
+        );
+        const customer = storedCustomers.find(
+          (row: { customerId: string }) => row.customerId === policy.customerId,
+        );
+        const product = storedProducts.find(
+          (row: { productId: string }) => row.productId === policy.productId,
+        );
+        assert.equal(item.firstName, customer.firstName);
+        assert.equal(item.productName, product.productName);
+        assert.equal(item.phone, normalizeThaiPhone(customer.phone));
+        assert.equal(item.premium, policy.premium);
+        assert.equal(item.daysUntilExpiry, daysUntilExpiry(policy.expiryDate));
+        assert.equal(typeof item.digitalSent, "boolean");
+        assert.equal(typeof item.voiceCalled, "boolean");
+        assert.equal(item.dnc, customer.dnc);
+        assert.equal(item.callbackDateTime, policy.callbackDateTime || null);
+      }
+      assert.ok(
+        policyList.items.some((row: { dnc: boolean }) => row.dnc),
+        "All policies includes DNC customers",
+      );
+      assert.equal(
+        (await request("/api/admin/policies", "GET", undefined, cookie)).status,
+        200,
+        "Existing paginated API remains available",
+      );
       assert.equal(
         (
           await (

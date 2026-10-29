@@ -36,6 +36,7 @@ import {
 import { requireAdmin } from "../middleware/require-admin";
 import type { Customer } from "../domain/types";
 import { subscribeToPolicyRenewals } from "../domain/policy-renewal-events";
+import { listAllPolicies } from "../services/policy-list.service";
 
 export const adminDataRouter = Router();
 adminDataRouter.use(requireAdmin);
@@ -232,6 +233,11 @@ async function policyRows(
 
 adminDataRouter.get("/policies", async (request, response) => {
   response.json(await policyRows(request.query));
+});
+adminDataRouter.get("/policies/all", async (_request, response) => {
+  response.setHeader("Cache-Control", "no-store");
+  response.vary("Cookie");
+  response.json(await listAllPolicies());
 });
 adminDataRouter.get("/renewals", async (request, response) => {
   response.json(await policyRows(request.query, true));

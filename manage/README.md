@@ -1,5 +1,7 @@
 # Insurance Management
 
+API สำหรับดึงกรมธรรม์ทั้งหมด 23 ฟิลด์: `GET /api/admin/policies/all` ดูวิธี Login และตัวอย่าง PowerShell, curl, Postman ใน [คู่มือ Policies API](docs/POLICIES-API.md)
+
 แอปนี้ติดตั้ง build และรันได้ด้วยตัวเอง ไม่ใช้ package, server, session หรือฐานข้อมูลจากแอปอื่น
 
 ## เริ่มใช้งาน
