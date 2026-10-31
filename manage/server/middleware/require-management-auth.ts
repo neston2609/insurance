@@ -28,15 +28,15 @@ function parseBasicCredentials(
 function rejectBasic(response: Parameters<RequestHandler>[1]): void {
   response.setHeader(
     "WWW-Authenticate",
-    'Basic realm="Insurance policies", charset="UTF-8"',
+    'Basic realm="MFEC Insurance Management", charset="UTF-8"',
   );
   response
     .status(401)
     .json({ message: "Valid Management credentials required" });
 }
 
-/** Allows either the existing Management session or Basic auth for this read-only feed. */
-export const requirePolicyReadAccess: RequestHandler = (
+/** Allows either an existing Management session or Basic auth. */
+export const requireManagementAuth: RequestHandler = (
   request,
   response,
   next,

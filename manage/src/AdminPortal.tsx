@@ -2607,7 +2607,7 @@ const managementApiEndpoints = [
   [
     "PATCH",
     "/api/admin/customers/:id/dnc",
-    "Management session",
+    "Management session or Basic Auth",
     'Set or clear Do Not Contact; JSON body: { "dnc": true|false }.',
   ],
   [
@@ -2765,31 +2765,27 @@ function ApiManual() {
           endpoints require a signed-in Management session cookie. For external
           tools, sign in first and retain the returned cookie. The read-only
           <code> /api/admin/policies/all</code> feed also accepts HTTP Basic
-          Auth. The public callback result API uses Basic Auth with Management
-          username and password; the policy renewal endpoint is public and rate
-          limited. Send JSON requests with{" "}
+          Auth. The DNC update and public callback result APIs also accept Basic
+          Auth with Management username and password; the policy renewal
+          endpoint is public and rate limited. Send JSON requests with{" "}
           <code>Content-Type: application/json</code>.
         </p>
       </section>
       <section className="admin-panel api-manual-panel">
         <h2>Example: set or clear customer DNC</h2>
         <p>
-          First sign in to obtain the Management session cookie. Set
-          <code> dnc</code> to <code>true</code> to block contact, or
-          <code> false</code> to allow contact again.
+          Use either a Management session or HTTP Basic Auth with your
+          Management username and password. Set <code> dnc</code> to{" "}
+          <code>true</code> to block contact, or <code>false</code> to allow
+          contact again. Use HTTPS in production.
         </p>
-        <pre>{`curl -i -c manage-cookies.txt \\
-  -H 'Content-Type: application/json' \\
-  -d '{"username":"YOUR_USERNAME","password":"YOUR_PASSWORD","portal":"manage"}' \\
-  https://mfecinsure.demohub24.com/api/admin/auth/login
-
-curl -i -b manage-cookies.txt -X PATCH \\
+        <pre>{`curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" -X PATCH \\
   -H 'Content-Type: application/json' \\
   -d '{"dnc":true}' \\
   https://mfecinsure.demohub24.com/api/admin/customers/CUST00001/dnc
 
 # Set dnc to false to allow contact again
-curl -i -b manage-cookies.txt -X PATCH \\
+curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" -X PATCH \\
   -H 'Content-Type: application/json' \\
   -d '{"dnc":false}' \\
   https://mfecinsure.demohub24.com/api/admin/customers/CUST00001/dnc`}</pre>

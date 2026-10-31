@@ -37,11 +37,15 @@ import { requireAdmin } from "../middleware/require-admin";
 import type { Customer } from "../domain/types";
 import { subscribeToPolicyRenewals } from "../domain/policy-renewal-events";
 import { listAllPolicies } from "../services/policy-list.service";
-import { requirePolicyReadAccess } from "../middleware/require-policy-read-access";
+import { requireManagementAuth } from "../middleware/require-management-auth";
 
 export const adminDataRouter = Router();
 adminDataRouter.use((request, response, next) => {
-  if (request.method === "GET" && request.path === "/policies/all") {
+  if (
+    (request.method === "GET" && request.path === "/policies/all") ||
+    (request.method === "PATCH" &&
+      /^\/customers\/[^/]+\/dnc$/.test(request.path))
+  ) {
     next();
     return;
   }
@@ -114,11 +118,19 @@ adminDataRouter.put("/customers/:id", async (request, response) => {
     await updateCustomer(request.params.id, request.body, request.user!.name),
   );
 });
-adminDataRouter.patch("/customers/:id/dnc", async (request, response) => {
-  response.json(
-    await setCustomerDnc(request.params.id, request.body, request.user!.name),
-  );
-});
+adminDataRouter.patch(
+  "/customers/:id/dnc",
+  requireManagementAuth,
+  async (request, response) => {
+    response.json(
+      await setCustomerDnc(
+        String(request.params.id),
+        request.body,
+        request.user!.name,
+      ),
+    );
+  },
+);
 adminDataRouter.delete("/customers/:id", async (request, response) => {
   await deleteCustomer(request.params.id, request.user!.name);
   response.status(204).end();
@@ -257,7 +269,7 @@ adminDataRouter.get("/policies", async (request, response) => {
 adminDataRouter.get(
   "/policies/all",
   policyReadLimiter,
-  requirePolicyReadAccess,
+  requireManagementAuth,
   async (_request, response) => {
     response.setHeader("Cache-Control", "no-store");
     response.vary("Cookie, Authorization");

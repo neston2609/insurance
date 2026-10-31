@@ -116,6 +116,17 @@ test(
         200,
         "policy feed allows Basic auth with existing Management credentials",
       );
+      const managementBasicAuth =
+        "Basic " + Buffer.from("admin:TestPassword123!").toString("base64");
+      assert.equal(
+        (
+          await request("/api/admin/customers", "POST", {}, undefined, {
+            Authorization: managementBasicAuth,
+          })
+        ).status,
+        401,
+        "other admin mutations remain session-only",
+      );
       assert.equal(
         (
           await request("/api/admin/auth/login", "POST", {
@@ -146,6 +157,41 @@ test(
         401,
         "DNC endpoint requires an admin session",
       );
+      assert.equal(
+        (
+          await request(
+            "/api/admin/customers/CUST00001/dnc",
+            "PATCH",
+            { dnc: true },
+            undefined,
+            {
+              Authorization:
+                "Basic " +
+                Buffer.from("admin:WrongPassword123!").toString("base64"),
+            },
+          )
+        ).status,
+        401,
+        "DNC endpoint rejects invalid Basic credentials",
+      );
+      const basicSetDnc = await request(
+        "/api/admin/customers/CUST00001/dnc",
+        "PATCH",
+        { dnc: true },
+        undefined,
+        { Authorization: managementBasicAuth },
+      );
+      assert.equal(basicSetDnc.status, 200);
+      assert.equal((await basicSetDnc.json()).dnc, true);
+      const basicClearDnc = await request(
+        "/api/admin/customers/CUST00001/dnc",
+        "PATCH",
+        { dnc: false },
+        undefined,
+        { Authorization: managementBasicAuth },
+      );
+      assert.equal(basicClearDnc.status, 200);
+      assert.equal((await basicClearDnc.json()).dnc, false);
       const setDnc = await request(
         "/api/admin/customers/CUST00001/dnc",
         "PATCH",
