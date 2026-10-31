@@ -1,6 +1,6 @@
 # Insurance Management
 
-API สำหรับดึงกรมธรรม์ทั้งหมด 23 ฟิลด์: `GET /api/admin/policies/all` ดูวิธี Login และตัวอย่าง PowerShell, curl, Postman ใน [คู่มือ Policies API](docs/POLICIES-API.md) บันทึกผลการติดต่อลูกค้าได้ที่ `POST /api/public/call-back-results` โดยใช้ Basic Authentication
+API สำหรับดึงกรมธรรม์ทั้งหมด 23 ฟิลด์: `GET /api/admin/policies/all` ดูวิธี Login และตัวอย่าง PowerShell, curl, Postman ใน [คู่มือ Policies API](docs/POLICIES-API.md) บันทึกผลการติดต่อลูกค้าได้ที่ `POST /api/public/call-back-results` โดยใช้ Basic Authentication ด้วยบัญชี Management เดียวกับหน้าเว็บ
 
 แอปนี้ติดตั้ง build และรันได้ด้วยตัวเอง ไม่ใช้ package, server, session หรือฐานข้อมูลจากแอปอื่น
 
@@ -26,7 +26,7 @@ npm start
 
 Routes: /manage, /manage/customers, /manage/products, /manage/policies, /manage/renewals, /manage/call-back-results, /manage/audit, /manage/settings
 
-จัดการลูกค้า สินค้า กรมธรรม์ ต่ออายุ และประวัติผลการโทรกลับ ข้อมูลผลการโทรกลับเก็บใน `data/call-back-results.json`; API ต้องกำหนด `CALLBACK_API_USERNAME` และ `CALLBACK_API_PASSWORD` ใน `.env` ไม่มีการเรียก Genesys หรือรัน scheduler
+จัดการลูกค้า สินค้า กรมธรรม์ ต่ออายุ และประวัติผลการโทรกลับ ข้อมูลผลการโทรกลับเก็บใน `data/call-back-results.json`; API ใช้ Basic Authentication โดยตรวจสอบ username/password กับบัญชี Management ไม่มีการเรียก Genesys หรือรัน scheduler
 
 ## แยกข้อมูลและการย้ายระบบ
 

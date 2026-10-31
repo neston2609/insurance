@@ -8,7 +8,7 @@ Authorization: Basic <base64(username:password)>
 Content-Type: application/json
 ```
 
-Configure the unique `CALLBACK_API_USERNAME` and `CALLBACK_API_PASSWORD` values in the management app's environment before using the endpoint. Requests without valid credentials receive `401`. If either credential is unset, the endpoint remains unavailable. Use HTTPS in production; Basic Authentication does not encrypt credentials on its own.
+Use the same Management username and password used to sign in to `/manage`. Requests without valid credentials receive `401`. Use HTTPS in production; Basic Authentication does not encrypt credentials on its own.
 
 Request body:
 
