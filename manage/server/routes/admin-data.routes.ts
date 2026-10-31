@@ -6,6 +6,7 @@ import {
   createCustomer,
   createPolicy,
   createProduct,
+  deleteCallBackResult,
   deleteCustomer,
   deletePolicy,
   deleteProduct,
@@ -261,20 +262,22 @@ adminDataRouter.get("/renewals", async (request, response) => {
 
 adminDataRouter.get("/call-back-results", async (request, response) => {
   const search = string(request.query.search).trim().toLocaleLowerCase();
-  const rows = (await callBackResults.all()).filter(
-    (item) =>
-      !search ||
-      [
-        item.customerId,
-        item.customerName,
-        item.policyId,
-        item.policyNumber,
-        item.productVehicleInformation,
-        item.customerIntent,
-        item.contactedBy,
-        item.status,
-      ].some((value) => value.toLocaleLowerCase().includes(search)),
-  );
+  const rows = (await callBackResults.all())
+    .filter(
+      (item) =>
+        !search ||
+        [
+          item.customerId,
+          item.customerName,
+          item.policyId,
+          item.policyNumber,
+          item.productVehicleInformation,
+          item.customerIntent,
+          item.contactedBy,
+          item.status,
+        ].some((value) => value.toLocaleLowerCase().includes(search)),
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const { page, pageSize } = paging(request.query);
   response.json({
     items: rows.slice((page - 1) * pageSize, page * pageSize),
@@ -282,6 +285,10 @@ adminDataRouter.get("/call-back-results", async (request, response) => {
     page,
     pageSize,
   });
+});
+adminDataRouter.delete("/call-back-results/:id", async (request, response) => {
+  await deleteCallBackResult(request.params.id, request.user!.name);
+  response.status(204).end();
 });
 
 adminDataRouter.get("/policies/renewal-events", (_request, response) => {

@@ -342,6 +342,9 @@ test(
       );
       assert.equal(createdCallback.status, 201);
       const callbackResult = await createdCallback.json();
+      const callbackTime = Date.parse(callbackResult.createdAt);
+      assert.ok(Number.isFinite(callbackTime), "API adds a valid timestamp");
+      assert.ok(Math.abs(Date.now() - callbackTime) < 10_000);
       assert.equal(callbackResult.customerId, policy.customerId);
       const storedCallbackCustomer = saved.find(
         (row: { customerId: string }) => row.customerId === policy.customerId,
@@ -373,6 +376,7 @@ test(
       );
       assert.equal(updatedCallbackResult.status, "RENEWED");
       assert.equal(updatedCallbackResult.customerIntent, "Renewal completed");
+      assert.ok(Date.parse(updatedCallbackResult.createdAt) >= callbackTime);
       const mismatchedResult = await request(
         "/api/public/call-back-results",
         "POST",
@@ -393,6 +397,40 @@ test(
       assert.equal(
         listedCallbackResults.items[0].callBackResultId,
         callbackResult.callBackResultId,
+      );
+      assert.equal(
+        (
+          await request(
+            `/api/admin/call-back-results/${callbackResult.callBackResultId}`,
+            "DELETE",
+          )
+        ).status,
+        401,
+        "deleting callback results requires an admin session",
+      );
+      assert.equal(
+        (
+          await request(
+            `/api/admin/call-back-results/${callbackResult.callBackResultId}`,
+            "DELETE",
+            undefined,
+            cookie,
+          )
+        ).status,
+        204,
+      );
+      assert.equal(
+        (
+          await (
+            await request(
+              "/api/admin/call-back-results",
+              "GET",
+              undefined,
+              cookie,
+            )
+          ).json()
+        ).total,
+        0,
       );
 
       const passwordResponse = await request(

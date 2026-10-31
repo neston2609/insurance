@@ -22,7 +22,7 @@ Request body:
 }
 ```
 
-The API verifies that the policy belongs to the supplied customer, then resolves the customer name, policy number and expiry date, and product/vehicle details from the management data. It stores `detail` as Customer Intent, `agentName` as Contacted By, and `status` as Status. A new record returns `201 Created`; if the same customer/policy pair already exists, that record is updated and returned with `200 OK` (no duplicate is created). Unknown customer/policy IDs return `404`; a customer/policy mismatch returns `400`.
+The API verifies that the policy belongs to the supplied customer, then resolves the customer name, policy number and expiry date, and product/vehicle details from the management data. It stores `detail` as Customer Intent, `agentName` as Contacted By, `status` as Status, and adds `createdAt` using the server's current date and time. When the same customer/policy pair is submitted again, its record is updated (including the timestamp) and returned with `200 OK`; no duplicate is created. A new record returns `201 Created`. Unknown customer/policy IDs return `404`; a customer/policy mismatch returns `400`.
 
 Example using curl:
 
@@ -33,4 +33,4 @@ curl --user "$CALLBACK_API_USERNAME:$CALLBACK_API_PASSWORD" \
   https://mfecinsure.demohub24.com/api/public/call-back-results
 ```
 
-The management UI lists the saved fields under **Call Back Result**. The records are stored in `data/call-back-results.json` and included in normal data backups.
+The management UI lists the timestamp as the first **Date/Time** column under **Call Back Result**. Management users can delete records from that page; the delete API is `DELETE /api/admin/call-back-results/:id` and requires a Management session. The records are stored in `data/call-back-results.json` and included in normal data backups.

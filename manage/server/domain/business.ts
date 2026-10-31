@@ -89,6 +89,7 @@ export async function createCallBackResult(input: unknown) {
     .filter(Boolean)
     .join(" / ");
   const { item, created } = await callBackResults.mutate((rows) => {
+    const timestamp = new Date().toISOString();
     const existingIndex = rows.findIndex(
       (row) =>
         row.customerId === customer.customerId &&
@@ -108,7 +109,7 @@ export async function createCallBackResult(input: unknown) {
       customerIntent: data.detail,
       contactedBy: data.agentName,
       status: data.status,
-      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      createdAt: timestamp,
     } satisfies CallBackResult;
     if (existingIndex >= 0) rows[existingIndex] = result;
     else rows.unshift(result);
@@ -125,6 +126,18 @@ export async function createCallBackResult(input: unknown) {
     },
   );
   return { item, created };
+}
+
+export async function deleteCallBackResult(
+  id: string,
+  actor: string,
+): Promise<void> {
+  await callBackResults.mutate((rows) => {
+    const index = rows.findIndex((row) => row.callBackResultId === id);
+    if (index < 0) throw httpError(404, "Call back result not found");
+    rows.splice(index, 1);
+  }, true);
+  await audit("DELETE_CALL_BACK_RESULT", actor, id);
 }
 
 const date = z.iso.date();

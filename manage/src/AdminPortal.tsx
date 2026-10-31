@@ -2340,9 +2340,29 @@ function PolicyDetail({ id }: { id: string }) {
 function CallBackResults() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const { data, error, loading } = useList<CallBackResult>(
+  const [deleteError, setDeleteError] = useState("");
+  const { data, error, loading, refresh } = useList<CallBackResult>(
     `${base}/call-back-results?search=${encodeURIComponent(search)}&page=${page}`,
   );
+  async function remove(item: CallBackResult) {
+    if (
+      !window.confirm(
+        `Delete the call back result for ${item.customerName} (${item.policyNumber})?`,
+      )
+    )
+      return;
+    setDeleteError("");
+    try {
+      await api(`${base}/call-back-results/${item.callBackResultId}`, {
+        method: "DELETE",
+      });
+      refresh();
+    } catch (reason) {
+      setDeleteError(
+        reason instanceof Error ? reason.message : "Could not delete result",
+      );
+    }
+  }
   return (
     <>
       <PageHead
@@ -2351,6 +2371,7 @@ function CallBackResults() {
         description="Results submitted through the authenticated callback API"
       />
       <ErrorNotice error={error} />
+      <ErrorNotice error={deleteError} />
       <div className="admin-toolbar">
         <div className="admin-search">
           <Search size={17} />
@@ -2365,6 +2386,7 @@ function CallBackResults() {
         <table className="admin-table">
           <thead>
             <tr>
+              <th>Date/Time</th>
               <th>Customer ID</th>
               <th>Customer name</th>
               <th>Policy ID</th>
@@ -2374,11 +2396,13 @@ function CallBackResults() {
               <th>Customer intent</th>
               <th>Contacted by</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {data.items.map((item) => (
               <tr key={item.callBackResultId}>
+                <td>{dateTimeText(item.createdAt)}</td>
                 <td>{item.customerId}</td>
                 <td>
                   <b>{item.customerName}</b>
@@ -2391,6 +2415,15 @@ function CallBackResults() {
                 <td>{item.contactedBy}</td>
                 <td>
                   <Badge value={item.status} />
+                </td>
+                <td className="row-actions">
+                  <button
+                    className="danger-link"
+                    aria-label={`Delete result for ${item.policyNumber}`}
+                    onClick={() => remove(item)}
+                  >
+                    <Trash2 size={16} /> Delete
+                  </button>
                 </td>
               </tr>
             ))}
