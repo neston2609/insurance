@@ -11,6 +11,7 @@ import {
 import type {
   AgentCallback,
   AuditRecord,
+  CallBackResult,
   CampaignList,
   Customer,
   Inquiry,
@@ -42,6 +43,10 @@ export const agentCallbacks = new JsonRepository<AgentCallback>(
   "agent-callbacks.json",
   () => [],
 );
+export const callBackResults = new JsonRepository<CallBackResult>(
+  "call-back-results.json",
+  () => [],
+);
 export const auditLog = new JsonRepository<AuditRecord>(
   "audit-log.json",
   () => [],
@@ -53,6 +58,7 @@ export const businessRepositories = [
   inquiries,
   campaigns,
   agentCallbacks,
+  callBackResults,
   auditLog,
 ] as const;
 

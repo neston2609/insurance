@@ -8,7 +8,7 @@
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test tests/api.test.ts tests/domain.test.ts tests/admin-credentials.test.ts tests/policy-list.test.ts",
     "start": "cross-env NODE_ENV=production tsx server/index.ts"
   },
   "dependencies": {

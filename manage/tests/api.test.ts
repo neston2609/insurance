@@ -34,6 +34,8 @@ async function launch() {
         SESSION_SECRET: "isolated-test-session-secret",
         ADMIN_USERNAME: "admin",
         ADMIN_PASSWORD: "TestPassword123!",
+        CALLBACK_API_USERNAME: "callback-test-agent",
+        CALLBACK_API_PASSWORD: "CallbackTestPassword456!",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -241,36 +243,20 @@ test(
           (row: { firstName: string }) => row.firstName === "Standalone",
         ),
       );
-      const campaignResponse = await request(
-        "/api/admin/campaigns",
-        "POST",
-        {
-          name: "Independent campaign",
-          description: "Local source",
-          filters: { excludeDnc: true },
-        },
-        cookie,
+      assert.equal(
+        (await request("/api/admin/campaigns", "GET", undefined, cookie))
+          .status,
+        404,
       );
-      assert.equal(campaignResponse.status, 201);
-      const campaign = await campaignResponse.json();
-      const preview = await (
-        await request(
-          "/api/admin/campaigns/" + campaign.campaignListId + "/preview",
-          "POST",
-          {},
-          cookie,
-        )
-      ).json();
-      assert.ok(preview.summary.eligible > 0);
-      const exported = await request(
-        "/api/admin/campaigns/" + campaign.campaignListId + "/export",
-        "POST",
-        {},
-        cookie,
+      assert.equal(
+        (await request("/api/admin/inquiries", "GET", undefined, cookie))
+          .status,
+        404,
       );
-      assert.equal(exported.status, 200);
-      assert.match(exported.headers.get("content-type") || "", /csv/);
-      assert.ok((await exported.text()).includes("customerId"));
+      assert.equal(
+        (await request("/api/public/agent-callbacks", "POST", {})).status,
+        404,
+      );
       const backupResponse = await request(
         "/api/admin/settings/backup",
         "POST",
@@ -308,6 +294,94 @@ test(
         })
       ).json();
       assert.equal(repeated.alreadyRenewed, true);
+      const currentPolicy = await (
+        await request(
+          `/api/admin/policies/${policy.policyId}`,
+          "GET",
+          undefined,
+          cookie,
+        )
+      ).json();
+
+      const callbackBody = {
+        customerId: policy.customerId,
+        policyId: policy.policyId,
+        status: "CONTACTED",
+        agentName: "Agentic Virtual Agent",
+        detail: "Interested in renewal",
+      };
+      assert.equal(
+        (await request("/api/public/call-back-results", "POST", callbackBody))
+          .status,
+        401,
+        "callback result endpoint requires Basic authentication",
+      );
+      const basicAuth =
+        "Basic " +
+        Buffer.from("callback-test-agent:CallbackTestPassword456!").toString(
+          "base64",
+        );
+      const createdCallback = await request(
+        "/api/public/call-back-results",
+        "POST",
+        callbackBody,
+        undefined,
+        { Authorization: basicAuth },
+      );
+      assert.equal(createdCallback.status, 201);
+      const callbackResult = await createdCallback.json();
+      assert.equal(callbackResult.customerId, policy.customerId);
+      const storedCallbackCustomer = saved.find(
+        (row: { customerId: string }) => row.customerId === policy.customerId,
+      );
+      assert.equal(
+        callbackResult.customerName,
+        `${storedCallbackCustomer.firstName} ${storedCallbackCustomer.lastName}`,
+      );
+      assert.equal(callbackResult.policyId, policy.policyId);
+      assert.equal(callbackResult.policyNumber, policy.policyNumber);
+      assert.equal(callbackResult.expireDate, currentPolicy.expiryDate);
+      assert.ok(callbackResult.productVehicleInformation);
+      assert.equal(callbackResult.customerIntent, callbackBody.detail);
+      assert.equal(callbackResult.contactedBy, callbackBody.agentName);
+      assert.equal(callbackResult.status, callbackBody.status);
+      const updatedCallback = await request(
+        "/api/public/call-back-results",
+        "POST",
+        { ...callbackBody, status: "RENEWED", detail: "Renewal completed" },
+        undefined,
+        { Authorization: basicAuth },
+      );
+      assert.equal(updatedCallback.status, 200);
+      const updatedCallbackResult = await updatedCallback.json();
+      assert.equal(
+        updatedCallbackResult.callBackResultId,
+        callbackResult.callBackResultId,
+        "same customer and policy update the existing result",
+      );
+      assert.equal(updatedCallbackResult.status, "RENEWED");
+      assert.equal(updatedCallbackResult.customerIntent, "Renewal completed");
+      const mismatchedResult = await request(
+        "/api/public/call-back-results",
+        "POST",
+        { ...callbackBody, customerId: "CUST00002" },
+        undefined,
+        { Authorization: basicAuth },
+      );
+      assert.equal(mismatchedResult.status, 400);
+      const listedResults = await request(
+        "/api/admin/call-back-results",
+        "GET",
+        undefined,
+        cookie,
+      );
+      assert.equal(listedResults.status, 200);
+      const listedCallbackResults = await listedResults.json();
+      assert.equal(listedCallbackResults.total, 1);
+      assert.equal(
+        listedCallbackResults.items[0].callBackResultId,
+        callbackResult.callBackResultId,
+      );
 
       const passwordResponse = await request(
         "/api/admin/auth/change-password",
@@ -340,7 +414,7 @@ test(
       for (const url of [
         "/manage",
         "/manage/customers",
-        "/manage/campaigns",
+        "/manage/call-back-results",
         "/manage/settings",
       ])
         assert.equal((await request(url)).status, 200, url);

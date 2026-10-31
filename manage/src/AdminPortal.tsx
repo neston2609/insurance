@@ -3,20 +3,16 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
-  CalendarClock,
   Check,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
-  CloudUpload,
   DatabaseBackup,
   FileText,
-  Filter,
   KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
-  Pencil,
   Plus,
   RefreshCw,
   Save,
@@ -40,14 +36,9 @@ import { api } from "./lib/api";
 
 import { THAI_PROVINCES } from "./lib/thai-provinces";
 
-import { AGENT_CALLBACK_INTENTS } from "../server/domain/types";
-
 import type {
-  AgentCallback,
-  CampaignFilters,
-  CampaignList,
+  CallBackResult,
   Customer,
-  Inquiry,
   Policy,
   Product,
 } from "../server/domain/types";
@@ -69,32 +60,6 @@ type RenewalResult = {
   expiryDate: string;
   renewalStatus: string;
   alreadyRenewed: boolean;
-};
-
-type AgentCallbackRow = AgentCallback & {
-  customer?: Customer;
-  policy?: Policy;
-  daysUntilExpiry: number;
-  overdue: boolean;
-};
-
-type AgentCallbackOption = {
-  customer: Customer;
-  policy: Policy;
-  daysUntilExpiry: number;
-};
-
-type AgentCallbackDraft = {
-  callbackId?: string;
-  policyId: string;
-  scheduledAt: string;
-  status: AgentCallback["status"];
-  priority: AgentCallback["priority"];
-  intent: AgentCallback["intent"];
-  assignedAgent: string;
-  agentName: string;
-  notes: string;
-  outcomeNotes: string;
 };
 
 type Portal = "manage";
@@ -187,9 +152,7 @@ const managementNav = [
   { key: "products", label: "Products", icon: ShieldCheck },
   { key: "policies", label: "Policies", icon: FileText },
   { key: "renewals", label: "Renewals", icon: RefreshCw },
-  { key: "callbacks", label: "Agent Call Back", icon: CalendarClock },
-  { key: "campaigns", label: "Campaigns", icon: Filter },
-  { key: "inquiries", label: "Callback requests", icon: ClipboardList },
+  { key: "call-back-results", label: "Call Back Result", icon: ClipboardList },
   { key: "audit", label: "Audit log", icon: Activity },
   { key: "settings", label: "Settings", icon: Settings },
 ];
@@ -404,16 +367,12 @@ function AdminPortal({
             <Products />
           ) : section === "policies" ? (
             <Policies />
-          ) : section === "campaigns" ? (
-            <Campaigns />
           ) : section === "settings" ? (
             <SystemSettings />
           ) : section === "renewals" ? (
             <Policies renewal />
-          ) : section === "callbacks" ? (
-            <AgentCallbacks username={username} />
-          ) : section === "inquiries" ? (
-            <Inquiries />
+          ) : section === "call-back-results" ? (
+            <CallBackResults />
           ) : section === "audit" ? (
             <Audit />
           ) : (
@@ -610,9 +569,7 @@ function Dashboard() {
               ["Total premium", money(kpis?.totalPremium || 0), "policies"],
               ["Expiring in 30 days", kpis?.expiring30, "renewals"],
               ["Contact pending", kpis?.contactPending, "renewals"],
-              ["Callback requested", kpis?.callbackRequested, "callbacks"],
               ["Renewed", kpis?.renewed, "renewals"],
-              ["New inquiries", kpis?.newInquiries, "inquiries"],
             ].map(([label, value, link]) => (
               <a
                 className="kpi-tile"
@@ -1005,7 +962,6 @@ function Customer360({ id }: { id: string }) {
   const [data, setData] = useState<{
     customer: Customer;
     policies: PolicyRow[];
-    inquiries: Inquiry[];
   } | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
@@ -1110,22 +1066,6 @@ function Customer360({ id }: { id: string }) {
               </table>
               {!data.policies.length && <Empty />}
             </div>
-          </div>
-          <div className="admin-panel">
-            <div className="panel-head">
-              <h2>Callback requests ({data.inquiries.length})</h2>
-            </div>
-            {data.inquiries.length ? (
-              data.inquiries.map((item) => (
-                <div className="activity-row" key={item.inquiryId}>
-                  {item.inquiryId}
-                  <Badge value={item.status} />
-                  <span>{dateText(item.createdAt)}</span>
-                </div>
-              ))
-            ) : (
-              <Empty />
-            )}
           </div>
           {editing && (
             <CustomerForm
@@ -2385,1221 +2325,73 @@ function PolicyDetail({ id }: { id: string }) {
   );
 }
 
-type Preview = {
-  rows: {
-    contact: Record<string, string>;
-    policy: Policy;
-    customer: Customer;
-    eligibility: string;
-  }[];
-  summary: Record<string, number>;
-};
-
-const blankFilters: CampaignFilters = { excludeDnc: true };
-
-function Campaigns() {
-  const [campaigns, setCampaigns] = useState<CampaignList[]>([]);
-  const [meta, setMeta] = useState<{ products: Product[] } | null>(null);
-  const [selected, setSelected] = useState<CampaignList | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [filters, setFilters] = useState<CampaignFilters>(blankFilters);
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const load = () =>
-    api<{ items: CampaignList[] }>(`${base}/campaigns`)
-      .then((value) => setCampaigns(value.items))
-      .catch((reason) => setError(reason.message));
-  useEffect(() => {
-    void load();
-    api<{ products: Product[] }>(`${base}/meta`)
-      .then(setMeta)
-      .catch(() => undefined);
-  }, []);
-  function select(item: CampaignList | null) {
-    setSelected(item);
-    setName(item?.name || "");
-    setDescription(item?.description || "");
-    setFilters(item?.filters || blankFilters);
-    setPreview(null);
-    setSelectedIds([]);
-    setError("");
-    setMessage("");
-  }
-  function filter<K extends keyof CampaignFilters>(
-    key: K,
-    value: CampaignFilters[K],
-  ) {
-    setFilters((current) => ({ ...current, [key]: value }));
-    setPreview(null);
-  }
-  async function showPreview() {
-    setBusy(true);
-    setError("");
-    try {
-      const result = await api<Preview>(`${base}/campaigns/preview`, {
-        method: "POST",
-        body: JSON.stringify({ filters }),
-      });
-      setPreview(result);
-      setSelectedIds(
-        result.rows
-          .filter((row) => row.eligibility === "ELIGIBLE")
-          .map((row) => row.policy.policyId),
-      );
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function save() {
-    if (!name.trim()) {
-      setError("Enter a campaign name");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const item = await api<CampaignList>(
-        `${base}/campaigns${selected ? `/${selected.campaignListId}` : ""}`,
-        {
-          method: selected ? "PUT" : "POST",
-          body: JSON.stringify({ name, description, filters }),
-        },
-      );
-      setSelected(item);
-      setMessage("Campaign saved");
-      await load();
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function remove() {
-    if (!selected || !window.confirm(`Delete campaign ${selected.name}?`))
-      return;
-    try {
-      await api(`${base}/campaigns/${selected.campaignListId}`, {
-        method: "DELETE",
-      });
-      select(null);
-      await load();
-    } catch (reason) {
-      setError((reason as Error).message);
-    }
-  }
-  async function exportCsv() {
-    if (!selected) {
-      setError("Save the campaign before exporting");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const response = await fetch(
-        `${base}/campaigns/${selected.campaignListId}/export`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selectedIds }),
-        },
-      );
-      if (!response.ok)
-        throw new Error((await response.json()).message || "Export failed");
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download =
-        response.headers
-          .get("Content-Disposition")
-          ?.match(/filename="([^"]+)"/)?.[1] || "genesys-contacts.csv";
-      link.click();
-      URL.revokeObjectURL(url);
-      setMessage("CSV downloaded");
-      await load();
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <PageHead
-        eyebrow="Renewal & Campaign"
-        title="Customer campaigns"
-        description="Segment customers, check eligibility, and export contacts as CSV"
-        action={
-          <button className="admin-primary" onClick={() => select(null)}>
-            <Plus size={17} /> Create campaign
-          </button>
-        }
-      />
-      <ErrorNotice error={error} />
-      {message && <div className="admin-success">{message}</div>}
-
-      <div className="campaign-layout">
-        <aside className="campaign-list">
-          <h2>Campaign lists</h2>
-          {campaigns.map((item) => (
-            <button
-              key={item.campaignListId}
-              className={
-                selected?.campaignListId === item.campaignListId ? "active" : ""
-              }
-              onClick={() => select(item)}
-            >
-              <b>{item.name}</b>
-              <small>
-                {item.recordCount} records · {dateText(item.updatedAt)}
-              </small>
-            </button>
-          ))}
-          {!campaigns.length && <Empty />}
-        </aside>
-        <div className="campaign-editor">
-          <div className="admin-panel">
-            <div className="panel-head">
-              <h2>{selected ? "Edit campaign" : "New campaign"}</h2>
-              {selected && (
-                <button className="danger-link" onClick={remove}>
-                  <Trash2 size={15} /> Delete
-                </button>
-              )}
-            </div>
-            <div className="admin-form-grid">
-              <label className="wide">
-                Campaign name
-                <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="e.g. Policies expiring in 30 days"
-                />
-              </label>
-              <label className="wide">
-                Details
-                <textarea
-                  rows={2}
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                />
-              </label>
-            </div>
-            <div className="form-section-label">Filters</div>
-            <div className="admin-form-grid">
-              <label>
-                Products
-                <select
-                  value={filters.productId || ""}
-                  onChange={(event) =>
-                    filter("productId", event.target.value || undefined)
-                  }
-                >
-                  <option value="">All products</option>
-                  {meta?.products.map((item) => (
-                    <option key={item.productId} value={item.productId}>
-                      {item.productName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Vehicle type
-                <select
-                  value={filters.vehicleType || ""}
-                  onChange={(event) =>
-                    filter("vehicleType", event.target.value || undefined)
-                  }
-                >
-                  <option value="">All</option>
-                  <option value="CAR">Car</option>
-                  <option value="MOTORCYCLE">Motorcycle</option>
-                </select>
-              </label>
-              <label>
-                Insurance class
-                <select
-                  value={filters.insuranceClass || ""}
-                  onChange={(event) =>
-                    filter("insuranceClass", event.target.value || undefined)
-                  }
-                >
-                  <option value="">All classes</option>
-                  {[
-                    ...new Set(
-                      meta?.products.map((item) => item.insuranceClass) || [],
-                    ),
-                  ].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Vehicle brand
-                <input
-                  value={filters.vehicleBrand || ""}
-                  onChange={(event) =>
-                    filter("vehicleBrand", event.target.value || undefined)
-                  }
-                />
-              </label>
-              <label>
-                Insurer
-                <input
-                  value={filters.insurerName || ""}
-                  onChange={(event) =>
-                    filter("insurerName", event.target.value || undefined)
-                  }
-                />
-              </label>
-              <label>
-                StatusRenewals
-                <select
-                  value={filters.renewalStatus || ""}
-                  onChange={(event) =>
-                    filter("renewalStatus", event.target.value || undefined)
-                  }
-                >
-                  <option value="">All statuses</option>
-                  {statuses.map((item) => (
-                    <option key={item} value={item}>
-                      {statusLabels[item]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Channel
-                <select
-                  value={filters.preferredChannel || ""}
-                  onChange={(event) =>
-                    filter("preferredChannel", event.target.value || undefined)
-                  }
-                >
-                  <option value="">All channels</option>
-                  {channels.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Expiry date from
-                <input
-                  type="date"
-                  value={filters.expiryFrom || ""}
-                  onChange={(event) =>
-                    filter("expiryFrom", event.target.value || undefined)
-                  }
-                />
-              </label>
-              <label>
-                To date
-                <input
-                  type="date"
-                  value={filters.expiryTo || ""}
-                  onChange={(event) =>
-                    filter("expiryTo", event.target.value || undefined)
-                  }
-                />
-              </label>
-              <label>
-                Days until expiry from
-                <input
-                  type="number"
-                  value={filters.daysFrom ?? ""}
-                  onChange={(event) =>
-                    filter(
-                      "daysFrom",
-                      event.target.value
-                        ? Number(event.target.value)
-                        : undefined,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                to
-                <input
-                  type="number"
-                  value={filters.daysTo ?? ""}
-                  onChange={(event) =>
-                    filter(
-                      "daysTo",
-                      event.target.value
-                        ? Number(event.target.value)
-                        : undefined,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Minimum premium
-                <input
-                  type="number"
-                  value={filters.premiumFrom ?? ""}
-                  onChange={(event) =>
-                    filter(
-                      "premiumFrom",
-                      event.target.value
-                        ? Number(event.target.value)
-                        : undefined,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Maximum premium
-                <input
-                  type="number"
-                  value={filters.premiumTo ?? ""}
-                  onChange={(event) =>
-                    filter(
-                      "premiumTo",
-                      event.target.value
-                        ? Number(event.target.value)
-                        : undefined,
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Province
-                <input
-                  value={filters.province || ""}
-                  onChange={(event) =>
-                    filter("province", event.target.value || undefined)
-                  }
-                />
-              </label>
-
-              <label>
-                Digital sent
-                <select
-                  value={
-                    filters.digitalSent === undefined
-                      ? ""
-                      : String(filters.digitalSent)
-                  }
-                  onChange={(event) =>
-                    filter(
-                      "digitalSent",
-                      event.target.value === ""
-                        ? undefined
-                        : event.target.value === "true",
-                    )
-                  }
-                >
-                  <option value="">All</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              </label>
-              <label>
-                Called
-                <select
-                  value={
-                    filters.voiceCalled === undefined
-                      ? ""
-                      : String(filters.voiceCalled)
-                  }
-                  onChange={(event) =>
-                    filter(
-                      "voiceCalled",
-                      event.target.value === ""
-                        ? undefined
-                        : event.target.value === "true",
-                    )
-                  }
-                >
-                  <option value="">All</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              </label>
-              <label>
-                Customer interest
-                <select
-                  value={filters.customerIntent || ""}
-                  onChange={(event) =>
-                    filter("customerIntent", event.target.value || undefined)
-                  }
-                >
-                  <option value="">All</option>
-                  {[
-                    "UNKNOWN",
-                    "INTERESTED",
-                    "NOT_INTERESTED",
-                    "CALLBACK",
-                    "RENEWED",
-                    "WRONG_NUMBER",
-                    "NO_ANSWER",
-                  ].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label className="admin-check">
-              <input
-                type="checkbox"
-                checked={filters.excludeDnc !== false}
-                onChange={(event) => filter("excludeDnc", event.target.checked)}
-              />{" "}
-              Exclude DNC customers
-            </label>
-            <div className="form-actions">
-              <button
-                className="admin-secondary"
-                disabled={busy}
-                onClick={showPreview}
-              >
-                <Search size={16} /> Preview
-              </button>
-              <button className="admin-primary" disabled={busy} onClick={save}>
-                <Save size={16} /> Save campaign
-              </button>
-            </div>
-          </div>
-          {preview && (
-            <div className="admin-panel campaign-preview">
-              <div className="panel-head">
-                <h2>Contact preview</h2>
-                <span>{selectedIds.length} selected</span>
-              </div>
-              <div className="preview-stats">
-                {[
-                  ["Matched", preview.summary.matched],
-                  ["Eligible", preview.summary.eligible],
-                  ["DNC", preview.summary.dncExcluded],
-                  ["Invalid phone", preview.summary.invalidPhone],
-                  ["Duplicate phone", preview.summary.duplicatePhone],
-                  ["Synced", preview.summary.alreadySynced],
-                ].map(([label, value]) => (
-                  <div key={String(label)}>
-                    <b>{value}</b>
-                    <span>{label}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Select</th>
-                      <th>Customers</th>
-                      <th>Policy number</th>
-                      <th>Phone</th>
-                      <th>Expiry date</th>
-                      <th>Eligibility</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.rows.map((row) => (
-                      <tr key={row.policy.policyId}>
-                        <td>
-                          <input
-                            type="checkbox"
-                            disabled={row.eligibility !== "ELIGIBLE"}
-                            checked={selectedIds.includes(row.policy.policyId)}
-                            onChange={(event) =>
-                              setSelectedIds((current) =>
-                                event.target.checked
-                                  ? [...current, row.policy.policyId]
-                                  : current.filter(
-                                      (id) => id !== row.policy.policyId,
-                                    ),
-                              )
-                            }
-                          />
-                        </td>
-                        <td>
-                          {row.customer.firstName} {row.customer.lastName}
-                        </td>
-                        <td>{row.policy.policyNumber}</td>
-                        <td>{row.contact.phone}</td>
-                        <td>{dateText(row.policy.expiryDate)}</td>
-                        <td>
-                          <Badge value={row.eligibility} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="form-actions">
-                <button
-                  className="admin-secondary"
-                  disabled={!selectedIds.length || busy || !selected}
-                  onClick={exportCsv}
-                >
-                  <ArrowDownToLine size={16} /> Export CSV
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function AgentCallbacks({ username }: { username: string }) {
-  const [data, setData] = useState<{
-    items: AgentCallbackRow[];
-    total: number;
-    page: number;
-    pageSize: number;
-    summary: {
-      scheduled: number;
-      today: number;
-      overdue: number;
-      completed: number;
-    };
-  }>({
-    items: [],
-    total: 0,
-    page: 1,
-    pageSize: 20,
-    summary: { scheduled: 0, today: 0, overdue: 0, completed: 0 },
-  });
-  const [options, setOptions] = useState<AgentCallbackOption[]>([]);
+function CallBackResults() {
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [intent, setIntent] = useState("");
-  const [timing, setTiming] = useState("");
   const [page, setPage] = useState(1);
-  const [version, setVersion] = useState(0);
-  const [draft, setDraft] = useState<AgentCallbackDraft | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    api<{ items: AgentCallbackOption[] }>(`${base}/agent-callbacks/options`)
-      .then((result) => setOptions(result.items))
-      .catch((reason) => setError(reason.message));
-  }, [version]);
-  useEffect(() => {
-    setLoading(true);
-    api<typeof data>(
-      `${base}/agent-callbacks?search=${encodeURIComponent(search)}&status=${status}&intent=${intent}&timing=${timing}&page=${page}`,
-    )
-      .then(setData)
-      .catch((reason) => setError(reason.message))
-      .finally(() => setLoading(false));
-  }, [search, status, intent, timing, page, version]);
-
-  function startCreate() {
-    setError("");
-    setMessage("");
-    setDraft({
-      policyId: options[0]?.policy.policyId || "",
-      scheduledAt: dateTimeInput(),
-      status: "SCHEDULED",
-      priority: "NORMAL",
-      intent: "CALLBACK_REQUEST",
-      assignedAgent: username,
-      agentName: "",
-      notes: "",
-      outcomeNotes: "",
-    });
-  }
-
-  function startEdit(item: AgentCallbackRow) {
-    setError("");
-    setMessage("");
-    setDraft({
-      callbackId: item.callbackId,
-      policyId: item.policyId,
-      scheduledAt: dateTimeInput(item.scheduledAt),
-      status: item.status,
-      priority: item.priority,
-      intent: item.intent || "CALLBACK_REQUEST",
-      assignedAgent: item.assignedAgent,
-      agentName: item.agentName || "",
-      notes: item.notes,
-      outcomeNotes: item.outcomeNotes,
-    });
-  }
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    if (!draft) return;
-    setBusy(true);
-    setError("");
-    try {
-      const body = {
-        ...(!draft.callbackId ? { policyId: draft.policyId } : {}),
-        scheduledAt: new Date(draft.scheduledAt).toISOString(),
-        priority: draft.priority,
-        intent: draft.intent,
-        assignedAgent: draft.assignedAgent,
-        agentName: draft.agentName,
-        notes: draft.notes,
-        ...(draft.callbackId
-          ? { status: draft.status, outcomeNotes: draft.outcomeNotes }
-          : {}),
-      };
-      const saved = await api<AgentCallback>(
-        draft.callbackId
-          ? `${base}/agent-callbacks/${draft.callbackId}`
-          : `${base}/agent-callbacks`,
-        {
-          method: draft.callbackId ? "PUT" : "POST",
-          body: JSON.stringify(body),
-        },
-      );
-      setDraft(null);
-      setMessage(
-        draft.callbackId
-          ? `${saved.callbackId} updated.`
-          : `${saved.callbackId} scheduled successfully.`,
-      );
-      setVersion((value) => value + 1);
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function changeStatus(
-    item: AgentCallbackRow,
-    nextStatus: "COMPLETED" | "CANCELLED",
-  ) {
-    const action = nextStatus === "COMPLETED" ? "complete" : "cancel";
-    if (!window.confirm(`${action} callback ${item.callbackId}?`)) return;
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      await api(`${base}/agent-callbacks/${item.callbackId}`, {
-        method: "PUT",
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      setMessage(
-        nextStatus === "COMPLETED"
-          ? `${item.callbackId} marked completed.`
-          : `${item.callbackId} cancelled.`,
-      );
-      setVersion((value) => value + 1);
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeCallback(item: AgentCallbackRow) {
-    if (
-      !window.confirm(
-        `Delete callback ${item.callbackId} for ${item.customerId} / ${item.policyId}? This cannot be undone.`,
-      )
-    )
-      return;
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      await api(`${base}/agent-callbacks/${item.callbackId}`, {
-        method: "DELETE",
-      });
-      if (draft?.callbackId === item.callbackId) setDraft(null);
-      if (data.items.length === 1 && page > 1) setPage(page - 1);
-      setMessage(`${item.callbackId} deleted.`);
-      setVersion((value) => value + 1);
-    } catch (reason) {
-      setError((reason as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const currentCallback = draft?.callbackId
-    ? data.items.find((item) => item.callbackId === draft.callbackId)
-    : undefined;
-  const currentCallbackOption =
-    currentCallback?.customer && currentCallback.policy
-      ? {
-          customer: currentCallback.customer,
-          policy: currentCallback.policy,
-          daysUntilExpiry: currentCallback.daysUntilExpiry,
-        }
-      : undefined;
-  const selectedOption =
-    options.find((item) => item.policy.policyId === draft?.policyId) ??
-    currentCallbackOption;
-  const policyOptions =
-    currentCallbackOption &&
-    !options.some(
-      (item) => item.policy.policyId === currentCallbackOption.policy.policyId,
-    )
-      ? [currentCallbackOption, ...options]
-      : options;
+  const { data, error, loading } = useList<CallBackResult>(
+    `${base}/call-back-results?search=${encodeURIComponent(search)}&page=${page}`,
+  );
   return (
     <>
       <PageHead
-        eyebrow="Renewal operations"
-        title="Agent Call Back"
-        description="Schedule and track customer renewal callbacks"
-        action={
-          <button className="admin-primary" onClick={startCreate}>
-            <Plus size={17} /> Schedule callback
-          </button>
-        }
-      />
-      <ErrorNotice error={error} />
-      {message && <div className="admin-success">{message}</div>}
-      <div className="callback-summary" aria-label="Callback summary">
-        {[
-          ["Scheduled", data.summary.scheduled],
-          ["Today", data.summary.today],
-          ["Overdue", data.summary.overdue],
-          ["Completed", data.summary.completed],
-        ].map(([label, value]) => (
-          <div key={String(label)}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </div>
-        ))}
-      </div>
-      <div className="admin-toolbar">
-        <div className="admin-search">
-          <Search size={17} />
-          <input
-            placeholder="Customer, phone, policy, assigned agent, or agent name"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setPage(1);
-            }}
-          />
-        </div>
-        <select
-          aria-label="Callback status"
-          value={status}
-          onChange={(event) => {
-            setStatus(event.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">All statuses</option>
-          <option value="SCHEDULED">Scheduled</option>
-          <option value="COMPLETED">Completed</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
-        <select
-          aria-label="Callback intent"
-          value={intent}
-          onChange={(event) => {
-            setIntent(event.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">All intents</option>
-          {AGENT_CALLBACK_INTENTS.map((value) => (
-            <option key={value} value={value}>
-              {statusLabels[value]}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Callback timing"
-          value={timing}
-          onChange={(event) => {
-            setTiming(event.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">Any time</option>
-          <option value="today">Today</option>
-          <option value="upcoming">Upcoming</option>
-          <option value="overdue">Overdue</option>
-        </select>
-      </div>
-      <div className="admin-table-wrap callback-table-wrap">
-        <table className="admin-table callback-table">
-          <thead>
-            <tr>
-              <th>Callback time</th>
-              <th>Customer</th>
-              <th>Expiring policy</th>
-              <th>Intent</th>
-              <th>Priority</th>
-              <th>Assigned agent</th>
-              <th>Agent name</th>
-              <th>Status</th>
-              <th>Details</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.items.map((item) => (
-              <tr
-                key={item.callbackId}
-                className={item.overdue ? "callback-overdue" : ""}
-              >
-                <td>
-                  <b>{dateTimeText(item.scheduledAt)}</b>
-                  <small>{item.callbackId}</small>
-                </td>
-                <td>
-                  {item.customer ? (
-                    <a
-                      className="table-link"
-                      href={`/manage/customers/${item.customerId}`}
-                    >
-                      {item.customer.firstName} {item.customer.lastName}
-                    </a>
-                  ) : (
-                    item.customerId
-                  )}
-                  <small className="mono">Customer ID: {item.customerId}</small>
-                  <small>{item.customer?.phone}</small>
-                </td>
-                <td>
-                  <a
-                    className="table-link"
-                    href={`/manage/policies/${item.policyId}`}
-                  >
-                    {item.policy?.policyNumber || item.policyId}
-                  </a>
-                  <small className="mono">Policy ID: {item.policyId}</small>
-                  <small>
-                    Expires {dateText(item.policy?.expiryDate)} ·{" "}
-                    {item.daysUntilExpiry} days
-                  </small>
-                </td>
-                <td>
-                  <Badge value={item.intent || "CALLBACK_REQUEST"} />
-                </td>
-                <td>
-                  <Badge value={item.priority} />
-                </td>
-                <td>{item.assignedAgent || "Unassigned"}</td>
-                <td>{item.agentName || "—"}</td>
-                <td>
-                  <Badge value={item.status} />
-                  {item.overdue && (
-                    <small className="callback-overdue-label">Overdue</small>
-                  )}
-                </td>
-                <td className="callback-details">
-                  {item.notes || "—"}
-                  {item.outcomeNotes && <small>{item.outcomeNotes}</small>}
-                </td>
-                <td className="row-actions">
-                  <button title="Edit callback" onClick={() => startEdit(item)}>
-                    <Pencil size={14} /> Edit
-                  </button>
-                  {item.status === "SCHEDULED" && (
-                    <>
-                      <button
-                        disabled={busy}
-                        title="Mark callback completed"
-                        onClick={() => changeStatus(item, "COMPLETED")}
-                      >
-                        <Check size={14} /> Complete
-                      </button>
-                      <button
-                        className="danger-link"
-                        disabled={busy}
-                        title="Cancel callback"
-                        onClick={() => changeStatus(item, "CANCELLED")}
-                      >
-                        <X size={14} /> Cancel
-                      </button>
-                    </>
-                  )}
-                  <button
-                    className="danger-link"
-                    disabled={busy}
-                    title="Delete callback record"
-                    onClick={() => removeCallback(item)}
-                  >
-                    <Trash2 size={14} /> Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {loading && <div className="admin-loading">Loading...</div>}
-        {!loading && !data.items.length && (
-          <Empty text="No callback schedules found" />
-        )}
-        <Pager
-          page={page}
-          pageSize={data.pageSize}
-          total={data.total}
-          onChange={setPage}
-        />
-      </div>
-      {draft && (
-        <Modal
-          title={draft.callbackId ? "Edit callback" : "Schedule callback"}
-          onClose={() => setDraft(null)}
-        >
-          <form className="admin-form callback-form" onSubmit={save}>
-            <div className="admin-form-grid">
-              <label className="wide">
-                Customer and expiring policy
-                <select
-                  required
-                  disabled={Boolean(draft.callbackId)}
-                  value={draft.policyId}
-                  onChange={(event) =>
-                    setDraft({ ...draft, policyId: event.target.value })
-                  }
-                >
-                  <option value="">Select a policy</option>
-                  {policyOptions.map((item) => (
-                    <option
-                      key={item.policy.policyId}
-                      value={item.policy.policyId}
-                    >
-                      {item.customer.firstName} {item.customer.lastName} ·{" "}
-                      {item.policy.policyNumber} · expires{" "}
-                      {dateText(item.policy.expiryDate)}
-                    </option>
-                  ))}
-                </select>
-                {selectedOption && (
-                  <small>
-                    {selectedOption.customer.phone} ·{" "}
-                    {selectedOption.daysUntilExpiry} days until expiry
-                  </small>
-                )}
-              </label>
-              <label>
-                Callback date and time
-                <input
-                  required
-                  type="datetime-local"
-                  value={draft.scheduledAt}
-                  onChange={(event) =>
-                    setDraft({ ...draft, scheduledAt: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Priority
-                <select
-                  value={draft.priority}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      priority: event.target.value as AgentCallback["priority"],
-                    })
-                  }
-                >
-                  <option value="NORMAL">Normal</option>
-                  <option value="HIGH">High</option>
-                  <option value="URGENT">Urgent</option>
-                </select>
-              </label>
-              <label>
-                Intent
-                <select
-                  required
-                  value={draft.intent}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      intent: event.target.value as AgentCallback["intent"],
-                    })
-                  }
-                >
-                  {AGENT_CALLBACK_INTENTS.map((value) => (
-                    <option key={value} value={value}>
-                      {statusLabels[value]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Assigned agent
-                <input
-                  value={draft.assignedAgent}
-                  onChange={(event) =>
-                    setDraft({ ...draft, assignedAgent: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Agent name
-                <input
-                  placeholder="Name of the agent who made the callback"
-                  value={draft.agentName}
-                  onChange={(event) =>
-                    setDraft({ ...draft, agentName: event.target.value })
-                  }
-                />
-              </label>
-              {draft.callbackId && (
-                <label>
-                  Status
-                  <select
-                    value={draft.status}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        status: event.target.value as AgentCallback["status"],
-                      })
-                    }
-                  >
-                    <option value="SCHEDULED">Scheduled</option>
-                    <option value="COMPLETED">Completed</option>
-                    <option value="CANCELLED">Cancelled</option>
-                  </select>
-                </label>
-              )}
-              <label className="wide">
-                Callback details
-                <textarea
-                  rows={3}
-                  placeholder="Customer request, preferred contact details, or renewal interest"
-                  value={draft.notes}
-                  onChange={(event) =>
-                    setDraft({ ...draft, notes: event.target.value })
-                  }
-                />
-              </label>
-              {draft.callbackId && (
-                <label className="wide">
-                  Outcome notes
-                  <textarea
-                    rows={3}
-                    placeholder="Record the call result or next action"
-                    value={draft.outcomeNotes}
-                    onChange={(event) =>
-                      setDraft({ ...draft, outcomeNotes: event.target.value })
-                    }
-                  />
-                </label>
-              )}
-            </div>
-            <ErrorNotice error={error} />
-            <div className="form-actions">
-              <button type="button" onClick={() => setDraft(null)}>
-                Cancel
-              </button>
-              <button className="admin-primary" disabled={busy}>
-                <Save size={16} /> {busy ? "Saving..." : "Save callback"}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-    </>
-  );
-}
-
-function Inquiries() {
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [page, setPage] = useState(1);
-  const [error, setError] = useState("");
-  const { data, refresh } = useList<Inquiry>(
-    `${base}/inquiries?search=${encodeURIComponent(search)}&status=${status}&page=${page}`,
-  );
-  async function change(item: Inquiry, value: string) {
-    try {
-      await api(`${base}/inquiries/${item.inquiryId}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: value }),
-      });
-      refresh();
-    } catch (reason) {
-      setError((reason as Error).message);
-    }
-  }
-  return (
-    <>
-      <PageHead
-        eyebrow="Website leads"
-        title="Callback requests"
-        description="Follow up with website inquiries"
+        eyebrow="Customer contact history"
+        title="Call Back Result"
+        description="Results submitted through the authenticated callback API"
       />
       <ErrorNotice error={error} />
       <div className="admin-toolbar">
         <div className="admin-search">
           <Search size={17} />
           <input
-            placeholder="Name or phone"
+            placeholder="Customer, policy, agent or intent"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value)}
-        >
-          <option value="">All statuses</option>
-          {["NEW", "CONTACTED", "CONVERTED", "CLOSED"].map((item) => (
-            <option key={item}>{item}</option>
-          ))}
-        </select>
       </div>
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Prospect</th>
-              <th>Phone</th>
-              <th>Products</th>
-              <th>Channel / time</th>
-              <th>Submitted</th>
+              <th>Customer ID</th>
+              <th>Customer name</th>
+              <th>Policy ID</th>
+              <th>Policy number</th>
+              <th>Expire date</th>
+              <th>Products / vehicle</th>
+              <th>Customer intent</th>
+              <th>Contacted by</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {data.items.map((item) => (
-              <tr key={item.inquiryId}>
-                <td>{item.inquiryId}</td>
+              <tr key={item.callBackResultId}>
+                <td>{item.customerId}</td>
                 <td>
-                  <b>
-                    {item.firstName} {item.lastName}
-                  </b>
+                  <b>{item.customerName}</b>
                 </td>
-                <td>{item.phone}</td>
-                <td>{item.productId}</td>
+                <td>{item.policyId}</td>
+                <td>{item.policyNumber}</td>
+                <td>{dateText(item.expireDate)}</td>
+                <td>{item.productVehicleInformation}</td>
+                <td>{item.customerIntent}</td>
+                <td>{item.contactedBy}</td>
                 <td>
-                  {item.preferredChannel}
-                  <small>{item.preferredContactTime}</small>
-                </td>
-                <td>{dateText(item.createdAt)}</td>
-                <td>
-                  <select
-                    aria-label={`Status for ${item.inquiryId}`}
-                    value={item.status}
-                    onChange={(event) => change(item, event.target.value)}
-                  >
-                    {["NEW", "CONTACTED", "CONVERTED", "CLOSED"].map(
-                      (value) => (
-                        <option key={value}>{value}</option>
-                      ),
-                    )}
-                  </select>
+                  <Badge value={item.status} />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {!data.items.length && <Empty />}
+        {loading ? (
+          <Empty text="Loading call back results..." />
+        ) : (
+          !data.items.length && <Empty />
+        )}
         <Pager
           page={page}
-          pageSize={20}
+          pageSize={data.pageSize}
           total={data.total}
           onChange={setPage}
         />

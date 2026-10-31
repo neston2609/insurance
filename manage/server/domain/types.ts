@@ -219,6 +219,20 @@ export interface AgentCallback {
   updatedAt: string;
 }
 
+export interface CallBackResult {
+  callBackResultId: string;
+  customerId: string;
+  customerName: string;
+  policyId: string;
+  policyNumber: string;
+  expireDate: string;
+  productVehicleInformation: string;
+  customerIntent: string;
+  contactedBy: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface GenesysScheduleTask {
   schedulerTaskId: string;
   name: string;

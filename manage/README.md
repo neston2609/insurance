@@ -1,6 +1,6 @@
 # Insurance Management
 
-API สำหรับดึงกรมธรรม์ทั้งหมด 23 ฟิลด์: `GET /api/admin/policies/all` ดูวิธี Login และตัวอย่าง PowerShell, curl, Postman ใน [คู่มือ Policies API](docs/POLICIES-API.md)
+API สำหรับดึงกรมธรรม์ทั้งหมด 23 ฟิลด์: `GET /api/admin/policies/all` ดูวิธี Login และตัวอย่าง PowerShell, curl, Postman ใน [คู่มือ Policies API](docs/POLICIES-API.md) บันทึกผลการติดต่อลูกค้าได้ที่ `POST /api/public/call-back-results` โดยใช้ Basic Authentication
 
 แอปนี้ติดตั้ง build และรันได้ด้วยตัวเอง ไม่ใช้ package, server, session หรือฐานข้อมูลจากแอปอื่น
 
@@ -24,9 +24,9 @@ npm start
 
 ในการพัฒนาค่าเริ่มต้นคือ admin / ChangeMe123! สำหรับ production ต้องตั้ง APP_SECRET, SESSION_SECRET และ ADMIN_PASSWORD ที่รัดกุมและแยกจากระบบอื่น Bootstrap password ถูกบันทึกเป็น hash ใน data/.auth/admin.json หลังเริ่มใช้งานครั้งแรก จากนั้นลบ ADMIN_PASSWORD ออกจาก .env และเปลี่ยนรหัสผ่านผ่านหน้า Settings ได้ Session cookie ใช้ชื่อ manage.sid และข้อมูล session อยู่ใน data/.sessions/ เฉพาะแอปนี้
 
-Routes: /manage, /manage/customers, /manage/products, /manage/policies, /manage/renewals, /manage/callbacks, /manage/campaigns, /manage/inquiries, /manage/audit, /manage/settings
+Routes: /manage, /manage/customers, /manage/products, /manage/policies, /manage/renewals, /manage/call-back-results, /manage/audit, /manage/settings
 
-จัดการลูกค้า สินค้า กรมธรรม์ ต่ออายุ นัดหมาย callback แคมเปญ และส่งออก CSV API ต่ออายุและ callback เดิมอยู่ที่ /api/public/policies/renew, /api/public/agent-callbacks, /api/public/agent-callbacks/status ของแอปนี้ ไม่มีการเรียก Genesys หรือรัน scheduler
+จัดการลูกค้า สินค้า กรมธรรม์ ต่ออายุ และประวัติผลการโทรกลับ ข้อมูลผลการโทรกลับเก็บใน `data/call-back-results.json`; API ต้องกำหนด `CALLBACK_API_USERNAME` และ `CALLBACK_API_PASSWORD` ใน `.env` ไม่มีการเรียก Genesys หรือรัน scheduler
 
 ## แยกข้อมูลและการย้ายระบบ
 

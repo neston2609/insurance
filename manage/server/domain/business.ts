@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   copyFile,
@@ -31,6 +32,7 @@ import {
   audit,
   auditLog,
   campaigns,
+  callBackResults,
   customers,
   inquiries,
   nextId,
@@ -44,6 +46,7 @@ import {
   CHANNELS,
   RENEWAL_STATUSES,
   type AgentCallback,
+  type CallBackResult,
   type Customer,
   type Policy,
   type Product,
@@ -54,6 +57,74 @@ export function httpError(
   message: string,
 ): Error & { status: number } {
   return Object.assign(new Error(message), { status });
+}
+
+const callBackResultInput = z.object({
+  customerId: z.string().trim().min(1).max(100),
+  policyId: z.string().trim().min(1).max(100),
+  status: z.string().trim().min(1).max(100),
+  agentName: z.string().trim().min(1).max(200),
+  detail: z.string().trim().min(1).max(4000),
+});
+
+export async function createCallBackResult(input: unknown) {
+  const data = callBackResultInput.parse(input);
+  const [customer, policy] = await Promise.all([
+    customers.findById("customerId", data.customerId),
+    policies.findById("policyId", data.policyId),
+  ]);
+  if (!customer) throw httpError(404, "Customer not found");
+  if (!policy) throw httpError(404, "Policy not found");
+  if (policy.customerId !== customer.customerId)
+    throw httpError(400, "Policy does not belong to the specified customer");
+  const product = await products.findById("productId", policy.productId);
+  const vehicle = policy.vehicle;
+  const vehicleInfo = [
+    vehicle.vehicleType,
+    [vehicle.brand, vehicle.model].filter(Boolean).join(" "),
+    vehicle.year,
+    vehicle.licensePlate,
+    vehicle.province,
+  ]
+    .filter(Boolean)
+    .join(" / ");
+  const { item, created } = await callBackResults.mutate((rows) => {
+    const existingIndex = rows.findIndex(
+      (row) =>
+        row.customerId === customer.customerId &&
+        row.policyId === policy.policyId,
+    );
+    const existing = existingIndex >= 0 ? rows[existingIndex] : undefined;
+    const result = {
+      callBackResultId: existing?.callBackResultId ?? randomUUID(),
+      customerId: customer.customerId,
+      customerName: `${customer.firstName} ${customer.lastName}`.trim(),
+      policyId: policy.policyId,
+      policyNumber: policy.policyNumber,
+      expireDate: policy.expiryDate,
+      productVehicleInformation: [product?.productName, vehicleInfo]
+        .filter(Boolean)
+        .join(" — "),
+      customerIntent: data.detail,
+      contactedBy: data.agentName,
+      status: data.status,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    } satisfies CallBackResult;
+    if (existingIndex >= 0) rows[existingIndex] = result;
+    else rows.unshift(result);
+    return { item: result, created: !existing };
+  });
+  await audit(
+    created ? "CREATE_CALL_BACK_RESULT" : "UPDATE_CALL_BACK_RESULT",
+    data.agentName,
+    item.callBackResultId,
+    {
+      customerId: item.customerId,
+      policyId: item.policyId,
+      status: item.status,
+    },
+  );
+  return { item, created };
 }
 
 const date = z.iso.date();
@@ -883,13 +954,11 @@ async function refreshOutdated(
 }
 
 export async function getDashboard() {
-  const [allCustomers, allProducts, allPolicies, allInquiries] =
-    await Promise.all([
-      customers.all(),
-      products.all(),
-      policies.all(),
-      inquiries.all(),
-    ]);
+  const [allCustomers, allProducts, allPolicies] = await Promise.all([
+    customers.all(),
+    products.all(),
+    policies.all(),
+  ]);
   const countExpiry = (days: number) =>
     allPolicies.filter((item) => {
       const remaining = daysUntilExpiry(item.expiryDate);
@@ -921,9 +990,6 @@ export async function getDashboard() {
       contactPending: allPolicies.filter(
         (item) => item.renewalStatus === "CONTACT_PENDING",
       ).length,
-      callbackRequested: allPolicies.filter(
-        (item) => item.renewalStatus === "CALLBACK_REQUESTED",
-      ).length,
       renewed: allPolicies.filter((item) => item.renewalStatus === "RENEWED")
         .length,
       dncCustomers: allCustomers.filter((item) => item.dnc).length,
@@ -933,7 +999,6 @@ export async function getDashboard() {
       genesysFailed: allPolicies.filter(
         (item) => item.genesys.syncStatus === "FAILED",
       ).length,
-      newInquiries: allInquiries.filter((item) => item.status === "NEW").length,
     },
     charts: {
       byProduct: countBy(

@@ -7,7 +7,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { adminDataRouter } from "./routes/admin-data.routes";
 import { authRouter } from "./routes/auth.routes";
-import { campaignRouter } from "./routes/campaign.routes";
 import { publicRouter } from "./routes/public.routes";
 import { initializeBusinessData } from "./domain/store";
 import { FileSessionStore } from "./middleware/file-session-store";
@@ -84,7 +83,6 @@ app.get("/api/health", (_request, response) => {
 });
 
 app.use("/api/admin/auth", authRouter);
-app.use("/api/admin/campaigns", campaignRouter);
 app.use("/api/admin", adminDataRouter);
 app.use("/api/public", publicRouter);
 app.use("/api", (_request, response) =>
