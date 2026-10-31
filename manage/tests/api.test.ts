@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { once } from "node:events";
 import path from "node:path";
@@ -137,6 +137,43 @@ test(
       assert.match(setCookie, /HttpOnly/);
       assert.match(setCookie, /Secure/);
       const cookie = setCookie.split(";")[0];
+      assert.equal(
+        (
+          await request("/api/admin/customers/CUST00001/dnc", "PATCH", {
+            dnc: true,
+          })
+        ).status,
+        401,
+        "DNC endpoint requires an admin session",
+      );
+      const setDnc = await request(
+        "/api/admin/customers/CUST00001/dnc",
+        "PATCH",
+        { dnc: true },
+        cookie,
+      );
+      assert.equal(setDnc.status, 200);
+      assert.equal((await setDnc.json()).dnc, true);
+      const clearDnc = await request(
+        "/api/admin/customers/CUST00001/dnc",
+        "PATCH",
+        { dnc: false },
+        cookie,
+      );
+      assert.equal(clearDnc.status, 200);
+      assert.equal((await clearDnc.json()).dnc, false);
+      assert.equal(
+        (
+          await request(
+            "/api/admin/customers/CUST00001/dnc",
+            "PATCH",
+            { dnc: "true" },
+            cookie,
+          )
+        ).status,
+        400,
+        "DNC flag must be a JSON boolean",
+      );
       const policyListResponse = await request(
         "/api/admin/policies/all",
         "GET",
@@ -272,6 +309,16 @@ test(
         (await request("/api/public/agent-callbacks", "POST", {})).status,
         404,
       );
+      const genesysConfigPath = path.join(folder, "data/config/genesys.json");
+      await mkdir(path.dirname(genesysConfigPath), { recursive: true });
+      await writeFile(
+        genesysConfigPath,
+        JSON.stringify({
+          enabled: true,
+          clientId: "old-client",
+          clientSecretEncrypted: "old-secret",
+        }),
+      );
       const backupResponse = await request(
         "/api/admin/settings/backup",
         "POST",
@@ -285,6 +332,79 @@ test(
       ).json();
       assert.ok(download.files["customers.json"]);
       assert.equal(download.files[".auth/admin.json"], undefined);
+      assert.equal(download.files["config/genesys.json"].clientId, undefined);
+      assert.equal(
+        download.files["config/genesys.json"].clientSecretEncrypted,
+        undefined,
+      );
+      const backups = await (
+        await request("/api/admin/settings/backups", "GET", undefined, cookie)
+      ).json();
+      assert.ok(
+        backups.items.some(
+          (item: { stamp: string }) => item.stamp === backup.directory,
+        ),
+      );
+      assert.equal(
+        (
+          await request(
+            `/api/admin/settings/backups/${backup.directory}/restore`,
+            "POST",
+          )
+        ).status,
+        401,
+        "restoring a backup requires an admin session",
+      );
+      const changedAfterBackup = await request(
+        "/api/admin/customers/CUST00001",
+        "PUT",
+        { firstName: "Changed after backup" },
+        cookie,
+      );
+      assert.equal(changedAfterBackup.status, 200);
+      await writeFile(
+        genesysConfigPath,
+        JSON.stringify({
+          enabled: false,
+          clientId: "new-client",
+          clientSecretEncrypted: "new-secret",
+        }),
+      );
+      const restored = await request(
+        `/api/admin/settings/backups/${backup.directory}/restore`,
+        "POST",
+        undefined,
+        cookie,
+      );
+      assert.equal(restored.status, 200);
+      const restoreResult = await restored.json();
+      assert.ok(restoreResult.safetyBackup);
+      assert.ok(restoreResult.files.includes("customers.json"));
+      const restoredGenesysConfig = JSON.parse(
+        await readFile(genesysConfigPath, "utf8"),
+      );
+      assert.equal(restoredGenesysConfig.enabled, true);
+      assert.equal(restoredGenesysConfig.clientId, "new-client");
+      assert.equal(restoredGenesysConfig.clientSecretEncrypted, "new-secret");
+      await request(
+        "/api/admin/customers/CUST00001/dnc",
+        "PATCH",
+        { dnc: true },
+        cookie,
+      );
+      assert.equal(
+        (
+          await (
+            await request(
+              "/api/admin/customers/CUST00001",
+              "GET",
+              undefined,
+              cookie,
+            )
+          ).json()
+        ).firstName,
+        "Standalone",
+      );
 
       assert.equal(
         (await request("/api/admin/genesys/config", "GET", undefined, cookie))
@@ -433,6 +553,55 @@ test(
         0,
       );
 
+      for (let index = 0; index < 21; index++) {
+        const updatedCustomer = await request(
+          "/api/admin/customers/CUST00001",
+          "PUT",
+          { firstName: `Audit test ${index}` },
+          cookie,
+        );
+        assert.equal(updatedCustomer.status, 200);
+      }
+      const auditPageOne = await (
+        await request("/api/admin/audit?page=1", "GET", undefined, cookie)
+      ).json();
+      assert.equal(auditPageOne.business.length, 20);
+      assert.equal(auditPageOne.pageSize, 20);
+      assert.ok(auditPageOne.total >= 21);
+      const auditPageTwo = await (
+        await request("/api/admin/audit?page=2", "GET", undefined, cookie)
+      ).json();
+      assert.ok(auditPageTwo.business.length > 0);
+      assert.ok(auditPageTwo.business.length <= 20);
+      assert.equal(
+        (await request("/api/admin/audit", "DELETE")).status,
+        401,
+        "clearing audit log requires an admin session",
+      );
+      assert.equal(
+        (await request("/api/admin/audit", "DELETE", undefined, cookie)).status,
+        204,
+      );
+      const clearedAudit = await (
+        await request("/api/admin/audit?page=1", "GET", undefined, cookie)
+      ).json();
+      assert.equal(clearedAudit.total, 0);
+      assert.deepEqual(clearedAudit.business, []);
+      const backupsAfterClear = await (
+        await request("/api/admin/settings/backups", "GET", undefined, cookie)
+      ).json();
+      assert.ok(backupsAfterClear.items.length > backups.items.length);
+      const auditSafetyBackup = backupsAfterClear.items[0];
+      const auditSafetyDownload = await (
+        await request(
+          `/api/admin/settings/backups/${auditSafetyBackup.stamp}/download`,
+          "GET",
+          undefined,
+          cookie,
+        )
+      ).json();
+      assert.ok(auditSafetyDownload.files["audit-log.json"].length > 0);
+
       const passwordResponse = await request(
         "/api/admin/auth/change-password",
         "POST",
@@ -465,6 +634,7 @@ test(
         "/manage",
         "/manage/customers",
         "/manage/call-back-results",
+        "/manage/api-manual",
         "/manage/settings",
       ])
         assert.equal((await request(url)).status, 200, url);

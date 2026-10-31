@@ -6,6 +6,7 @@ import {
   createCustomer,
   createPolicy,
   createProduct,
+  clearAuditLog,
   deleteCallBackResult,
   deleteCustomer,
   deletePolicy,
@@ -14,10 +15,12 @@ import {
   getCustomer360,
   getDashboard,
   httpError,
+  listBackups,
   listAudit,
-  resetDemoData,
-  renewPolicyByNumber,
+  restoreBackup,
   searchAll,
+  setCustomerDnc,
+  renewPolicyByNumber,
   updateCustomer,
   updatePolicy,
   updateProduct,
@@ -109,6 +112,11 @@ adminDataRouter.post("/customers", async (request, response) => {
 adminDataRouter.put("/customers/:id", async (request, response) => {
   response.json(
     await updateCustomer(request.params.id, request.body, request.user!.name),
+  );
+});
+adminDataRouter.patch("/customers/:id/dnc", async (request, response) => {
+  response.json(
+    await setCustomerDnc(request.params.id, request.body, request.user!.name),
   );
 });
 adminDataRouter.delete("/customers/:id", async (request, response) => {
@@ -341,8 +349,12 @@ adminDataRouter.delete("/policies/:id", async (request, response) => {
   response.status(204).end();
 });
 
-adminDataRouter.get("/audit", async (_request, response) => {
-  response.json(await listAudit());
+adminDataRouter.get("/audit", async (request, response) => {
+  response.json(await listAudit(number(request.query.page, 1)));
+});
+adminDataRouter.delete("/audit", async (_request, response) => {
+  await clearAuditLog();
+  response.status(204).end();
 });
 adminDataRouter.get("/search", async (request, response) => {
   response.json(await searchAll(string(request.query.q)));
@@ -363,6 +375,17 @@ adminDataRouter.post("/settings/backup", async (request, response) => {
     downloadUrl: `/api/admin/settings/backups/${result.directory}/download`,
   });
 });
+adminDataRouter.get("/settings/backups", async (_request, response) => {
+  response.json(await listBackups());
+});
+adminDataRouter.post(
+  "/settings/backups/:stamp/restore",
+  async (request, response) => {
+    response.json(
+      await restoreBackup(request.params.stamp, request.user!.name),
+    );
+  },
+);
 adminDataRouter.get(
   "/settings/backups/:stamp/download",
   async (request, response) => {
@@ -377,9 +400,3 @@ adminDataRouter.get(
     });
   },
 );
-adminDataRouter.post("/settings/reset-demo", async (request, response) => {
-  if (request.body?.confirmation !== "RESET")
-    throw httpError(400, "Type RESET to confirm demo reset");
-  await resetDemoData(request.user!.name);
-  response.json({ ok: true });
-});

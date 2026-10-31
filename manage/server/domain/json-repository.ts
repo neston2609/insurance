@@ -138,10 +138,10 @@ export class JsonRepository<T extends object> {
     return target;
   }
 
-  async replaceAll(rows: T[]): Promise<void> {
+  async replaceAll(rows: T[], backup = true): Promise<void> {
     await this.mutate((current) => {
       current.splice(0, current.length, ...rows);
-    }, true);
+    }, backup);
   }
 
   private async atomicWrite(rows: T[]): Promise<void> {

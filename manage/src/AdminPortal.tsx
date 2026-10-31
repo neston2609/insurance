@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -154,6 +155,7 @@ const managementNav = [
   { key: "renewals", label: "Renewals", icon: RefreshCw },
   { key: "call-back-results", label: "Call Back Result", icon: ClipboardList },
   { key: "audit", label: "Audit log", icon: Activity },
+  { key: "api-manual", label: "API Manual", icon: BookOpen },
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -375,6 +377,8 @@ function AdminPortal({
             <CallBackResults />
           ) : section === "audit" ? (
             <Audit />
+          ) : section === "api-manual" ? (
+            <ApiManual />
           ) : (
             <div className="empty-state">Page not found</div>
           )}
@@ -2446,6 +2450,7 @@ function CallBackResults() {
 }
 
 function Audit() {
+  const [page, setPage] = useState(1);
   const [records, setRecords] = useState<{
     business: {
       id: string;
@@ -2454,20 +2459,52 @@ function Audit() {
       target: string;
       timestamp: string;
     }[];
+    total: number;
+    page: number;
+    pageSize: number;
     genesys: unknown[];
   } | null>(null);
   const [error, setError] = useState("");
+  const [refreshVersion, setRefreshVersion] = useState(0);
   useEffect(() => {
-    api<typeof records>(`${base}/audit`)
+    setError("");
+    api<typeof records>(`${base}/audit?page=${page}`)
       .then(setRecords)
       .catch((reason) => setError(reason.message));
-  }, []);
+  }, [page, refreshVersion]);
+  async function clearLog() {
+    if (
+      !window.confirm(
+        `Clear all ${records?.total ?? 0} audit log records? A safety backup will be created first.`,
+      )
+    )
+      return;
+    setError("");
+    try {
+      await api(`${base}/audit`, { method: "DELETE" });
+      setPage(1);
+      setRefreshVersion((version) => version + 1);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not clear log",
+      );
+    }
+  }
   return (
     <>
       <PageHead
         eyebrow="System"
         title="Audit log"
         description="History of data and configuration changes"
+        action={
+          <button
+            className="admin-danger"
+            disabled={!records?.total}
+            onClick={clearLog}
+          >
+            <Trash2 size={16} /> Clear log
+          </button>
+        }
       />
       <ErrorNotice error={error} />
       <div className="admin-table-wrap">
@@ -2492,7 +2529,320 @@ function Audit() {
           </tbody>
         </table>
         {!records?.business.length && <Empty />}
+        {records && (
+          <Pager
+            page={records.page}
+            pageSize={records.pageSize}
+            total={records.total}
+            onChange={setPage}
+          />
+        )}
       </div>
+    </>
+  );
+}
+
+const managementApiEndpoints = [
+  [
+    "GET",
+    "/api/health",
+    "Public",
+    "Service health and version-independent status.",
+  ],
+  [
+    "GET",
+    "/api/admin/auth/session?portal=manage",
+    "Public",
+    "Check whether the Management session is authenticated (not the renewal API).",
+  ],
+  [
+    "POST",
+    "/api/admin/auth/login",
+    "Public",
+    "Sign in and receive the Management session cookie.",
+  ],
+  [
+    "POST",
+    "/api/admin/auth/logout",
+    "Management session",
+    "Sign out of Management.",
+  ],
+  [
+    "POST",
+    "/api/admin/auth/change-password",
+    "Management session",
+    "Change the signed-in administrator password.",
+  ],
+  [
+    "GET",
+    "/api/admin/dashboard",
+    "Management session",
+    "Dashboard metrics and charts.",
+  ],
+  [
+    "GET",
+    "/api/admin/customers?search=&page=1&pageSize=20",
+    "Management session",
+    "Search and page customers.",
+  ],
+  [
+    "GET",
+    "/api/admin/customers/:id",
+    "Management session",
+    "Read one customer.",
+  ],
+  [
+    "GET",
+    "/api/admin/customers/:id/360",
+    "Management session",
+    "Read customer, policy, and inquiry details.",
+  ],
+  ["POST", "/api/admin/customers", "Management session", "Create a customer."],
+  [
+    "PUT",
+    "/api/admin/customers/:id",
+    "Management session",
+    "Update customer fields.",
+  ],
+  [
+    "PATCH",
+    "/api/admin/customers/:id/dnc",
+    "Management session",
+    'Set or clear Do Not Contact; JSON body: { "dnc": true|false }.',
+  ],
+  [
+    "DELETE",
+    "/api/admin/customers/:id",
+    "Management session",
+    "Delete a customer when no policies reference it.",
+  ],
+  [
+    "GET",
+    "/api/admin/products?search=&page=1&pageSize=20",
+    "Management session",
+    "Search and page products.",
+  ],
+  ["GET", "/api/admin/products/:id", "Management session", "Read one product."],
+  ["POST", "/api/admin/products", "Management session", "Create a product."],
+  ["PUT", "/api/admin/products/:id", "Management session", "Update a product."],
+  [
+    "DELETE",
+    "/api/admin/products/:id",
+    "Management session",
+    "Delete a product when no records reference it.",
+  ],
+  [
+    "GET",
+    "/api/admin/policies?search=&page=1&pageSize=20",
+    "Management session",
+    "Search and page policies.",
+  ],
+  [
+    "GET",
+    "/api/admin/policies/all",
+    "Management session or Basic Auth",
+    "Read the complete flattened policy feed using a Management session or Basic Auth.",
+  ],
+  [
+    "GET",
+    "/api/admin/policies/:id",
+    "Management session",
+    "Read one policy with customer and product details.",
+  ],
+  ["POST", "/api/admin/policies", "Management session", "Create a policy."],
+  ["PUT", "/api/admin/policies/:id", "Management session", "Update a policy."],
+  [
+    "POST",
+    "/api/admin/policies/:id/renew",
+    "Management session",
+    "Renew a policy.",
+  ],
+  [
+    "DELETE",
+    "/api/admin/policies/:id",
+    "Management session",
+    "Delete a policy.",
+  ],
+  [
+    "GET",
+    "/api/admin/renewals?daysTo=90&page=1&pageSize=20",
+    "Management session",
+    "List policies needing renewal follow-up.",
+  ],
+  [
+    "GET",
+    "/api/admin/policies/renewal-events",
+    "Management session",
+    "Server-sent renewal event stream.",
+  ],
+  [
+    "GET",
+    "/api/admin/call-back-results?search=&page=1&pageSize=20",
+    "Management session",
+    "Search and page callback result records.",
+  ],
+  [
+    "DELETE",
+    "/api/admin/call-back-results/:id",
+    "Management session",
+    "Delete a callback result.",
+  ],
+  [
+    "GET",
+    "/api/admin/audit?page=1",
+    "Management session",
+    "Read the business audit log, 20 records per page.",
+  ],
+  [
+    "DELETE",
+    "/api/admin/audit",
+    "Management session",
+    "Clear the business audit log; an automatic backup is kept.",
+  ],
+  [
+    "GET",
+    "/api/admin/search?q=term",
+    "Management session",
+    "Search customers and policies.",
+  ],
+  [
+    "GET",
+    "/api/admin/meta",
+    "Management session",
+    "Load customer, product, and campaign form choices.",
+  ],
+  [
+    "POST",
+    "/api/admin/settings/backup",
+    "Management session",
+    "Create a data backup.",
+  ],
+  [
+    "GET",
+    "/api/admin/settings/backups",
+    "Management session",
+    "List available backups.",
+  ],
+  [
+    "POST",
+    "/api/admin/settings/backups/:stamp/restore",
+    "Management session",
+    "Restore selected data backup after making a safety backup.",
+  ],
+  [
+    "GET",
+    "/api/admin/settings/backups/:stamp/download",
+    "Management session",
+    "Download a JSON backup.",
+  ],
+  [
+    "POST",
+    "/api/public/policies/renew",
+    "Public; rate limited",
+    "Renew a policy by policy number.",
+  ],
+  [
+    "POST",
+    "/api/public/call-back-results",
+    "Basic Auth",
+    "Create or update the callback result for a customer/policy pair.",
+  ],
+] as const;
+
+function ApiManual() {
+  return (
+    <>
+      <PageHead
+        eyebrow="Developer reference"
+        title="API Manual"
+        description="Management API endpoints, authentication, and ready-to-adapt request examples"
+      />
+      <section className="admin-panel api-manual-panel">
+        <h2>Base URL and authentication</h2>
+        <p>
+          Use the same origin as this Management app. Most{" "}
+          <code>/api/admin</code>
+          endpoints require a signed-in Management session cookie. For external
+          tools, sign in first and retain the returned cookie. The read-only
+          <code> /api/admin/policies/all</code> feed also accepts HTTP Basic
+          Auth. The public callback result API uses Basic Auth with Management
+          username and password; the policy renewal endpoint is public and rate
+          limited. Send JSON requests with{" "}
+          <code>Content-Type: application/json</code>.
+        </p>
+      </section>
+      <section className="admin-panel api-manual-panel">
+        <h2>Example: set or clear customer DNC</h2>
+        <p>
+          First sign in to obtain the Management session cookie. Set
+          <code> dnc</code> to <code>true</code> to block contact, or
+          <code> false</code> to allow contact again.
+        </p>
+        <pre>{`curl -i -c manage-cookies.txt \\
+  -H 'Content-Type: application/json' \\
+  -d '{"username":"YOUR_USERNAME","password":"YOUR_PASSWORD","portal":"manage"}' \\
+  https://mfecinsure.demohub24.com/api/admin/auth/login
+
+curl -i -b manage-cookies.txt -X PATCH \\
+  -H 'Content-Type: application/json' \\
+  -d '{"dnc":true}' \\
+  https://mfecinsure.demohub24.com/api/admin/customers/CUST00001/dnc
+
+# Set dnc to false to allow contact again
+curl -i -b manage-cookies.txt -X PATCH \\
+  -H 'Content-Type: application/json' \\
+  -d '{"dnc":false}' \\
+  https://mfecinsure.demohub24.com/api/admin/customers/CUST00001/dnc`}</pre>
+      </section>
+      <section className="admin-panel api-manual-panel">
+        <h2>Example: submit a Call Back Result</h2>
+        <p>
+          The API assigns the current server date/time automatically. The
+          customer and policy must exist and belong together.
+        </p>
+        <pre>{`curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"customerId":"CUST00001","policyId":"POL00001","status":"CONTACTED","agentName":"Support Agent","detail":"Interested in renewal"}' \\
+  https://mfecinsure.demohub24.com/api/public/call-back-results`}</pre>
+      </section>
+      <section className="admin-panel api-manual-panel">
+        <h2>Example: read policies with Basic Auth</h2>
+        <p>
+          This policy-feed endpoint also accepts the active Management session
+          cookie. Basic Auth is useful for external server-to-server callers.
+        </p>
+        <pre>{`curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  'https://mfecinsure.demohub24.com/api/admin/policies/all'`}</pre>
+      </section>
+      <section className="admin-panel api-manual-panel">
+        <h2>All endpoints</h2>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Endpoint</th>
+                <th>Authentication</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {managementApiEndpoints.map(
+                ([method, endpoint, auth, description]) => (
+                  <tr key={`${method} ${endpoint}`}>
+                    <td>
+                      <Badge value={method} />
+                    </td>
+                    <td className="mono">{endpoint}</td>
+                    <td>{auth}</td>
+                    <td>{description}</td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </>
   );
 }
@@ -2500,13 +2850,32 @@ function Audit() {
 function SystemSettings() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [backups, setBackups] = useState<
+    { stamp: string; createdAt: string; files: string[] }[]
+  >([]);
   const [backup, setBackup] = useState<{
     directory: string;
     files: string[];
     downloadUrl: string;
   } | null>(null);
-  const [confirm, setConfirm] = useState("");
+  const [selectedBackup, setSelectedBackup] = useState("");
   const [busy, setBusy] = useState(false);
+  async function loadBackups() {
+    try {
+      const result = await api<{
+        items: { stamp: string; createdAt: string; files: string[] }[];
+      }>(`${base}/settings/backups`);
+      setBackups(result.items);
+      setSelectedBackup((current) => current || result.items[0]?.stamp || "");
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not load backups",
+      );
+    }
+  }
+  useEffect(() => {
+    void loadBackups();
+  }, []);
   async function makeBackup() {
     setBusy(true);
     setError("");
@@ -2516,27 +2885,34 @@ function SystemSettings() {
       });
       setBackup(result);
       setMessage("Backup created");
+      await loadBackups();
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
       setBusy(false);
     }
   }
-  async function reset() {
+  async function restore() {
+    const selected = backups.find((item) => item.stamp === selectedBackup);
+    if (!selected) return;
     if (
-      confirm !== "RESET" ||
-      !window.confirm("Reset demo data? A backup will be created first.")
+      !window.confirm(
+        `Restore backup from ${dateTimeText(selected.createdAt)}? Current data will first be backed up automatically.`,
+      )
     )
       return;
     setBusy(true);
     setError("");
     try {
-      await api(`${base}/settings/reset-demo`, {
-        method: "POST",
-        body: JSON.stringify({ confirmation: "RESET" }),
-      });
-      setMessage("Demo data reset");
-      setConfirm("");
+      const result = await api<{ safetyBackup: string; files: string[] }>(
+        `${base}/settings/backups/${selectedBackup}/restore`,
+        { method: "POST" },
+      );
+      setMessage(
+        `Backup restored. Safety backup saved as ${result.safetyBackup}.`,
+      );
+      setBackup(null);
+      await loadBackups();
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
@@ -2548,7 +2924,7 @@ function SystemSettings() {
       <PageHead
         eyebrow="System"
         title="System settings"
-        description="Manage the administrator account and demo data"
+        description="Manage administrator access and data backups"
       />
       <ErrorNotice error={error} />
       {message && <div className="admin-success">{message}</div>}
@@ -2580,24 +2956,37 @@ function SystemSettings() {
         </section>
         <section className="admin-panel">
           <RefreshCw size={28} />
-          <h2>Reset demo data</h2>
+          <h2>Restore data</h2>
           <p>
-            The system backs up current data before restoring the original demo
-            records. Your administrator account will be preserved
+            Restore business records and configuration from a backup created
+            with “Backup data”. A safety backup of current data is created
+            before restoring. Administrator credentials, sessions, and
+            environment settings are not included.
           </p>
           <label>
-            Type RESET to confirm
-            <input
-              value={confirm}
-              onChange={(event) => setConfirm(event.target.value)}
-            />
+            Select backup
+            <select
+              value={selectedBackup}
+              onChange={(event) => setSelectedBackup(event.target.value)}
+              disabled={!backups.length || busy}
+            >
+              {!backups.length && (
+                <option value="">No backups available</option>
+              )}
+              {backups.map((item) => (
+                <option key={item.stamp} value={item.stamp}>
+                  {dateTimeText(item.createdAt) || item.stamp} ·{" "}
+                  {item.files.length} files
+                </option>
+              ))}
+            </select>
           </label>
           <button
             className="admin-danger"
-            disabled={confirm !== "RESET" || busy}
-            onClick={reset}
+            disabled={!selectedBackup || busy}
+            onClick={restore}
           >
-            <Trash2 size={16} /> Reset data
+            <RefreshCw size={16} /> Restore selected backup
           </button>
         </section>
       </div>

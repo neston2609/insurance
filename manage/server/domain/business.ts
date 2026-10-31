@@ -5,6 +5,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -18,19 +19,12 @@ import {
 import { publishPolicyRenewal } from "./policy-renewal-events";
 import { nextRenewalPeriod } from "./renewal-date";
 import { backupsDir, dataDir } from "./json-repository";
-import {
-  seedAgentCallbacks,
-  seedCampaignLists,
-  seedCustomers,
-  seedInquiries,
-  seedPolicies,
-  seedProducts,
-  emptyGenesys,
-} from "./seed";
+import { emptyGenesys } from "./seed";
 import {
   agentCallbacks,
   audit,
   auditLog,
+  businessRepositories,
   campaigns,
   callBackResults,
   customers,
@@ -59,13 +53,15 @@ export function httpError(
   return Object.assign(new Error(message), { status });
 }
 
-const callBackResultInput = z.object({
-  customerId: z.string().trim().min(1).max(100),
-  policyId: z.string().trim().min(1).max(100),
-  status: z.string().trim().min(1).max(100),
-  agentName: z.string().trim().min(1).max(200),
-  detail: z.string().trim().min(1).max(4000),
-});
+const callBackResultInput = z
+  .object({
+    customerId: z.string().trim().min(1).max(100),
+    policyId: z.string().trim().min(1).max(100),
+    status: z.string().trim().min(1).max(100),
+    agentName: z.string().trim().min(1).max(200),
+    detail: z.string().trim().min(1).max(4000),
+  })
+  .strict();
 
 export async function createCallBackResult(input: unknown) {
   const data = callBackResultInput.parse(input);
@@ -303,6 +299,25 @@ export async function updateCustomer(
   });
   await refreshOutdated(id);
   await audit("UPDATE_CUSTOMER", actor, id, { fields: Object.keys(data) });
+  return item;
+}
+
+export async function setCustomerDnc(
+  id: string,
+  input: unknown,
+  actor: string,
+): Promise<Customer> {
+  const { dnc } = z.object({ dnc: z.boolean() }).strict().parse(input);
+  const item = await customers.mutate((rows) => {
+    const index = rows.findIndex((row) => row.customerId === id);
+    if (index < 0) throw httpError(404, "Customer not found");
+    rows[index] = { ...rows[index], dnc, updatedAt: new Date().toISOString() };
+    return rows[index];
+  });
+  await refreshOutdated(id);
+  await audit(dnc ? "SET_CUSTOMER_DNC" : "CLEAR_CUSTOMER_DNC", actor, id, {
+    dnc,
+  });
   return item;
 }
 
@@ -1076,12 +1091,23 @@ export async function createBackup(): Promise<{
   directory: string;
   files: string[];
 }> {
-  const stamp = new Date()
-    .toISOString()
-    .replace(/[-:T.Z]/g, "")
-    .slice(0, 17);
-  const directory = path.join(backupsDir, stamp);
-  await mkdir(directory, { recursive: true });
+  await mkdir(backupsDir, { recursive: true });
+  let timestamp = Date.now();
+  let stamp: string;
+  let directory: string;
+  while (true) {
+    stamp = new Date(timestamp++)
+      .toISOString()
+      .replace(/[-:T.Z]/g, "")
+      .slice(0, 17);
+    directory = path.join(backupsDir, stamp);
+    try {
+      await mkdir(directory);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
   const files: string[] = [];
   for (const name of await readdir(dataDir)) {
     if (!name.endsWith(".json")) continue;
@@ -1093,10 +1119,21 @@ export async function createBackup(): Promise<{
   await mkdir(path.join(directory, "config"), { recursive: true });
   for (const name of await readdir(configDir)) {
     if (!name.endsWith(".json")) continue;
-    await copyFile(
-      path.join(configDir, name),
-      path.join(directory, "config", name),
-    );
+    const source = path.join(configDir, name);
+    const target = path.join(directory, "config", name);
+    if (name === "genesys.json") {
+      const value = JSON.parse(await readFile(source, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      delete value.clientId;
+      delete value.clientSecretEncrypted;
+      await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, {
+        mode: 0o600,
+      });
+    } else {
+      await copyFile(source, target);
+    }
     files.push(`config/${name}`);
   }
   return { directory: stamp, files };
@@ -1128,19 +1165,159 @@ export async function downloadBackup(stamp: string) {
   return files;
 }
 
-export async function resetDemoData(actor: string): Promise<void> {
-  await createBackup();
-  await customers.replaceAll(seedCustomers());
-  await products.replaceAll(seedProducts());
-  await policies.replaceAll(seedPolicies());
-  await inquiries.replaceAll(seedInquiries());
-  await campaigns.replaceAll(seedCampaignLists());
-  await agentCallbacks.replaceAll(seedAgentCallbacks());
-  await audit("RESET_DEMO_DATA", actor);
+export async function listBackups() {
+  let entries;
+  try {
+    entries = await readdir(backupsDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return { items: [] };
+    throw error;
+  }
+  const items = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^\d{17}$/.test(entry.name)) continue;
+    try {
+      const manifest = JSON.parse(
+        await readFile(
+          path.join(backupsDir, entry.name, "manifest.json"),
+          "utf8",
+        ),
+      ) as { createdAt?: unknown; files?: unknown };
+      if (!Array.isArray(manifest.files)) continue;
+      items.push({
+        stamp: entry.name,
+        createdAt:
+          typeof manifest.createdAt === "string" ? manifest.createdAt : "",
+        files: manifest.files.filter(
+          (file): file is string => typeof file === "string",
+        ),
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") continue;
+    }
+  }
+  items.sort((a, b) => b.stamp.localeCompare(a.stamp));
+  return { items };
 }
 
-export async function listAudit() {
-  const business = await auditLog.all();
+export async function restoreBackup(stamp: string, actor: string) {
+  if (!/^\d{17}$/.test(stamp)) throw httpError(400, "Invalid backup ID");
+  const directory = path.join(backupsDir, stamp);
+  let manifest: { files?: unknown };
+  try {
+    manifest = JSON.parse(
+      await readFile(path.join(directory, "manifest.json"), "utf8"),
+    ) as { files?: unknown };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw httpError(404, "Backup not found");
+    throw error;
+  }
+  if (
+    !manifest ||
+    typeof manifest !== "object" ||
+    !Array.isArray(manifest.files)
+  )
+    throw httpError(400, "Invalid backup manifest");
+
+  const restoreFiles = new Map<string, object[]>();
+  for (const repository of businessRepositories) {
+    if (!manifest.files.includes(repository.fileName))
+      throw httpError(400, `Backup is missing ${repository.fileName}`);
+    let value: unknown;
+    try {
+      value = JSON.parse(
+        await readFile(path.join(directory, repository.fileName), "utf8"),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw httpError(400, `Backup is missing ${repository.fileName}`);
+      throw error;
+    }
+    if (
+      !Array.isArray(value) ||
+      value.some(
+        (item) => !item || typeof item !== "object" || Array.isArray(item),
+      )
+    )
+      throw httpError(400, `Invalid data in ${repository.fileName}`);
+    restoreFiles.set(repository.fileName, value as object[]);
+  }
+
+  const configFiles = new Map<string, unknown>();
+  for (const file of manifest.files) {
+    if (typeof file !== "string" || !file.startsWith("config/")) continue;
+    const name = file.slice("config/".length);
+    if (!/^[a-z0-9-]+\.json$/.test(name))
+      throw httpError(400, "Invalid configuration file in backup");
+    let value: unknown;
+    try {
+      value = JSON.parse(
+        await readFile(path.join(directory, "config", name), "utf8"),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw httpError(400, `Backup is missing config/${name}`);
+      throw error;
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw httpError(400, `Invalid data in config/${name}`);
+    if (name === "genesys.json") {
+      const restored = value as Record<string, unknown>;
+      delete restored.clientId;
+      delete restored.clientSecretEncrypted;
+      try {
+        const current = JSON.parse(
+          await readFile(path.join(dataDir, "config", name), "utf8"),
+        ) as Record<string, unknown>;
+        for (const credential of ["clientId", "clientSecretEncrypted"])
+          if (credential in current) restored[credential] = current[credential];
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    configFiles.set(name, value);
+  }
+
+  const safetyBackup = await createBackup();
+  await writeBackupManifest(safetyBackup.directory, safetyBackup.files);
+  for (const repository of businessRepositories)
+    await repository.replaceAll(
+      restoreFiles.get(repository.fileName) as never,
+      false,
+    );
+  if (configFiles.size) {
+    const configDirectory = path.join(dataDir, "config");
+    await mkdir(configDirectory, { recursive: true });
+    for (const [name, value] of configFiles) {
+      const target = path.join(configDirectory, name);
+      const temporary = `${target}.${randomUUID()}.tmp`;
+      await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+        flag: "wx",
+        mode: 0o600,
+      });
+      await rename(temporary, target);
+    }
+  }
+  await audit("RESTORE_BACKUP", actor, stamp, {
+    files: businessRepositories.map((repository) => repository.fileName),
+    safetyBackup: safetyBackup.directory,
+  });
+  return {
+    restored: stamp,
+    safetyBackup: safetyBackup.directory,
+    files: businessRepositories.map((repository) => repository.fileName),
+  };
+}
+
+export async function listAudit(page = 1) {
+  const business = await auditLog.query({
+    sortBy: "timestamp",
+    descending: true,
+    page,
+    pageSize: 20,
+  });
   let genesys: unknown[] = [];
   try {
     genesys = JSON.parse(
@@ -1152,7 +1329,13 @@ export async function listAudit() {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  return { business, genesys };
+  return { ...business, business: business.items, genesys };
+}
+
+export async function clearAuditLog(): Promise<void> {
+  const safetyBackup = await createBackup();
+  await writeBackupManifest(safetyBackup.directory, safetyBackup.files);
+  await auditLog.replaceAll([], false);
 }
 
 export async function writeBackupManifest(
