@@ -1394,6 +1394,10 @@ a {
   white-space: nowrap;
   text-align: right;
 }
+.admin-table td.row-actions {
+  display: table-cell;
+  vertical-align: middle;
+}
 .row-actions button,
 .danger-link {
   display: inline-flex;
