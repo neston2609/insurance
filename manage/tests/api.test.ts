@@ -34,8 +34,6 @@ async function launch() {
         SESSION_SECRET: "isolated-test-session-secret",
         ADMIN_USERNAME: "admin",
         ADMIN_PASSWORD: "TestPassword123!",
-        CALLBACK_API_USERNAME: "callback-test-agent",
-        CALLBACK_API_PASSWORD: "CallbackTestPassword456!",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -101,6 +99,23 @@ test(
       assert.equal((await request("/genesys")).status, 404);
       assert.equal((await request("/api/admin/customers")).status, 401);
       assert.equal((await request("/api/admin/policies/all")).status, 401);
+      assert.equal(
+        (
+          await request(
+            "/api/admin/policies/all",
+            "GET",
+            undefined,
+            undefined,
+            {
+              Authorization:
+                "Basic " +
+                Buffer.from("admin:TestPassword123!").toString("base64"),
+            },
+          )
+        ).status,
+        200,
+        "policy feed allows Basic auth with existing Management credentials",
+      );
       assert.equal(
         (
           await request("/api/admin/auth/login", "POST", {
@@ -317,10 +332,7 @@ test(
         "callback result endpoint requires Basic authentication",
       );
       const basicAuth =
-        "Basic " +
-        Buffer.from("callback-test-agent:CallbackTestPassword456!").toString(
-          "base64",
-        );
+        "Basic " + Buffer.from("admin:TestPassword123!").toString("base64");
       const createdCallback = await request(
         "/api/public/call-back-results",
         "POST",

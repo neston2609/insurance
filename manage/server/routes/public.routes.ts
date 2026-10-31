@@ -1,40 +1,35 @@
 import { Router } from "express";
-import { timingSafeEqual } from "node:crypto";
 import { rateLimit } from "express-rate-limit";
+import { adminCredentials } from "../services/admin-credentials.service";
 import { createCallBackResult, renewPolicyByNumber } from "../domain/business";
 
 export const publicRouter = Router();
 
-function requireCallBackApiBasicAuth(
+async function requireCallBackApiBasicAuth(
   request: import("express").Request,
   response: import("express").Response,
   next: import("express").NextFunction,
-) {
-  const configuredUsername = process.env.CALLBACK_API_USERNAME || "";
-  const configuredPassword = process.env.CALLBACK_API_PASSWORD || "";
+): Promise<void> {
   const authorization = request.get("Authorization") || "";
   const match = authorization.match(/^Basic\s+([A-Za-z0-9+/]+=*)$/i);
-  let authenticated = false;
-  if (configuredUsername && configuredPassword && match) {
-    try {
-      const decoded = Buffer.from(match[1], "base64").toString("utf8");
+  let account;
+  if (match && match[1].length <= 4096) {
+    const encoded = match[1];
+    const decoded = Buffer.from(encoded, "base64");
+    if (
+      decoded.toString("base64").replace(/=+$/, "") ===
+      encoded.replace(/=+$/, "")
+    ) {
       const separator = decoded.indexOf(":");
-      if (separator >= 0) {
-        const username = Buffer.from(decoded.slice(0, separator));
-        const password = Buffer.from(decoded.slice(separator + 1));
-        const expectedUsername = Buffer.from(configuredUsername);
-        const expectedPassword = Buffer.from(configuredPassword);
-        authenticated =
-          username.length === expectedUsername.length &&
-          password.length === expectedPassword.length &&
-          timingSafeEqual(username, expectedUsername) &&
-          timingSafeEqual(password, expectedPassword);
+      if (separator > 0) {
+        const username = decoded.subarray(0, separator).toString("utf8");
+        const password = decoded.subarray(separator + 1).toString("utf8");
+        if (username.length <= 100 && password.length <= 256)
+          account = await adminCredentials.authenticate(username, password);
       }
-    } catch {
-      authenticated = false;
     }
   }
-  if (!authenticated) {
+  if (!account) {
     response.setHeader(
       "WWW-Authenticate",
       'Basic realm="Call Back Result API"',
@@ -42,6 +37,7 @@ function requireCallBackApiBasicAuth(
     response.status(401).json({ message: "Basic authentication required" });
     return;
   }
+  request.user = { name: account.username };
   next();
 }
 

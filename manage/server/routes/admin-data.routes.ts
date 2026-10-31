@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import { daysUntilExpiry } from "../domain/campaign-contact";
 import {
   createBackup,
@@ -32,9 +33,24 @@ import { requireAdmin } from "../middleware/require-admin";
 import type { Customer } from "../domain/types";
 import { subscribeToPolicyRenewals } from "../domain/policy-renewal-events";
 import { listAllPolicies } from "../services/policy-list.service";
+import { requirePolicyReadAccess } from "../middleware/require-policy-read-access";
 
 export const adminDataRouter = Router();
-adminDataRouter.use(requireAdmin);
+adminDataRouter.use((request, response, next) => {
+  if (request.method === "GET" && request.path === "/policies/all") {
+    next();
+    return;
+  }
+  requireAdmin(request, response, next);
+});
+
+const policyReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Too many policy requests. Please try again later." },
+});
 
 const string = (value: unknown) => (typeof value === "string" ? value : "");
 const number = (value: unknown, fallback: number) =>
@@ -229,11 +245,16 @@ async function policyRows(
 adminDataRouter.get("/policies", async (request, response) => {
   response.json(await policyRows(request.query));
 });
-adminDataRouter.get("/policies/all", async (_request, response) => {
-  response.setHeader("Cache-Control", "no-store");
-  response.vary("Cookie");
-  response.json(await listAllPolicies());
-});
+adminDataRouter.get(
+  "/policies/all",
+  policyReadLimiter,
+  requirePolicyReadAccess,
+  async (_request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.vary("Cookie, Authorization");
+    response.json(await listAllPolicies());
+  },
+);
 adminDataRouter.get("/renewals", async (request, response) => {
   response.json(await policyRows(request.query, true));
 });
