@@ -1752,6 +1752,12 @@ function PolicyList({ renewal }: { renewal: boolean }) {
           <thead>
             <tr>
               <th>Policy number</th>
+              {!renewal && (
+                <>
+                  <th>Policy ID</th>
+                  <th>Customer ID</th>
+                </>
+              )}
               <th>Customers</th>
               <th>Products / Vehicle</th>
               <th>Expired</th>
@@ -1778,6 +1784,12 @@ function PolicyList({ renewal }: { renewal: boolean }) {
                     {item.policyNumber}
                   </a>
                 </td>
+                {!renewal && (
+                  <>
+                    <td className="mono">{item.policyId}</td>
+                    <td className="mono">{item.customerId}</td>
+                  </>
+                )}
                 <td>
                   {item.customer ? (
                     <a
