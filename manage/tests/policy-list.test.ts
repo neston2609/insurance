@@ -48,6 +48,34 @@ test("all-policy feed retains expired, DNC and orphan records and uses Bangkok c
     assert.equal(before.items[0].phone, "+66812345678");
     assert.equal(before.items[0].dnc, true);
     assert.equal(before.items[0].callbackDateTime, null);
+    assert.deepEqual(
+      await listAllPolicies(new Date("2026-10-29T16:59:59Z"), {
+        policyIds: ["EXPIRED", "ORPHAN"],
+      }),
+      {
+        items: before.items.filter((row) =>
+          ["EXPIRED", "ORPHAN"].includes(row.policyId),
+        ),
+        total: 2,
+      },
+    );
+    const customerFiltered = await listAllPolicies(
+      new Date("2026-10-29T16:59:59Z"),
+      { customerIds: [customer.customerId, "missing-customer"] },
+    );
+    assert.deepEqual(
+      customerFiltered.items.map((row) => row.policyId),
+      before.items.map((row) => row.policyId),
+      "multiple customer IDs include all matching policies",
+    );
+    assert.deepEqual(
+      await listAllPolicies(new Date("2026-10-29T16:59:59Z"), {
+        policyIds: ["ORPHAN"],
+        customerIds: [customer.customerId],
+      }),
+      { items: [], total: 0 },
+      "policy and customer filters are combined",
+    );
     assert.ok(
       before.items.find((row) => row.policyId === "EXPIRED")!.daysUntilExpiry <
         0,

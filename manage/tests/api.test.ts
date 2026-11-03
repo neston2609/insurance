@@ -99,6 +99,8 @@ test(
       assert.equal((await request("/genesys")).status, 404);
       assert.equal((await request("/api/admin/customers")).status, 401);
       assert.equal((await request("/api/admin/policies/all")).status, 401);
+      assert.equal((await request("/api/admin/customers/all")).status, 401);
+      assert.equal((await request("/api/admin/products/all")).status, 401);
       assert.equal(
         (
           await request(
@@ -118,6 +120,78 @@ test(
       );
       const managementBasicAuth =
         "Basic " + Buffer.from("admin:TestPassword123!").toString("base64");
+      for (const path of [
+        "/api/admin/customers/all",
+        "/api/admin/products/all",
+      ]) {
+        const response = await request(path, "GET", undefined, undefined, {
+          Authorization: managementBasicAuth,
+        });
+        assert.equal(
+          response.status,
+          200,
+          `${path} accepts Management Basic Auth`,
+        );
+        const result = await response.json();
+        assert.ok(Array.isArray(result.items));
+        assert.equal(result.total, result.items.length);
+        assert.equal(response.headers.get("cache-control"), "no-store");
+        assert.match(response.headers.get("vary") || "", /Authorization/);
+        const invalidAuth = await request(path, "GET", undefined, undefined, {
+          Authorization:
+            "Basic " +
+            Buffer.from("admin:WrongPassword123!").toString("base64"),
+        });
+        assert.equal(invalidAuth.status, 401);
+      }
+      const basicCustomers = await (
+        await request("/api/admin/customers/all", "GET", undefined, undefined, {
+          Authorization: managementBasicAuth,
+        })
+      ).json();
+      const basicProducts = await (
+        await request("/api/admin/products/all", "GET", undefined, undefined, {
+          Authorization: managementBasicAuth,
+        })
+      ).json();
+      const selectedCustomerIds = basicCustomers.items
+        .slice(0, 2)
+        .map((item: { customerId: string }) => item.customerId);
+      assert.equal(selectedCustomerIds.length, 2);
+      const filterCustomers = await request(
+        `/api/admin/customers/all?customerId=${selectedCustomerIds.map(encodeURIComponent).join(",")}`,
+        "GET",
+        undefined,
+        undefined,
+        { Authorization: managementBasicAuth },
+      );
+      const filteredCustomers = await filterCustomers.json();
+      assert.equal(filteredCustomers.total, selectedCustomerIds.length);
+      assert.deepEqual(
+        filteredCustomers.items.map(
+          (item: { customerId: string }) => item.customerId,
+        ),
+        selectedCustomerIds,
+      );
+      const selectedProductIds = basicProducts.items
+        .slice(0, 2)
+        .map((item: { productId: string }) => item.productId);
+      assert.equal(selectedProductIds.length, 2);
+      const filterProducts = await request(
+        `/api/admin/products/all?productId=${selectedProductIds.map(encodeURIComponent).join(",")}`,
+        "GET",
+        undefined,
+        undefined,
+        { Authorization: managementBasicAuth },
+      );
+      const filteredProducts = await filterProducts.json();
+      assert.equal(filteredProducts.total, selectedProductIds.length);
+      assert.deepEqual(
+        filteredProducts.items.map(
+          (item: { productId: string }) => item.productId,
+        ),
+        selectedProductIds,
+      );
       assert.equal(
         (
           await request("/api/admin/customers", "POST", {}, undefined, {
@@ -243,6 +317,70 @@ test(
         await import("../server/domain/campaign-contact");
       assert.equal(policyList.total, storedPolicies.length);
       assert.equal(policyList.items.length, storedPolicies.length);
+      const selectedPolicies = policyList.items.slice(0, 2);
+      assert.equal(selectedPolicies.length, 2);
+      const policyIdParams = new URLSearchParams();
+      for (const item of selectedPolicies)
+        policyIdParams.append("policyId", item.policyId);
+      const multiplePolicyResponse = await request(
+        `/api/admin/policies/all?${policyIdParams}`,
+        "GET",
+        undefined,
+        cookie,
+      );
+      assert.equal(multiplePolicyResponse.status, 200);
+      const multiplePolicyResult = await multiplePolicyResponse.json();
+      assert.deepEqual(
+        multiplePolicyResult.items.map(
+          (item: { policyId: string }) => item.policyId,
+        ),
+        selectedPolicies.map((item: { policyId: string }) => item.policyId),
+      );
+      assert.equal(multiplePolicyResult.total, selectedPolicies.length);
+      const policyCustomerIds = [
+        ...new Set(
+          storedCustomers.map(
+            (customer: { customerId: string }) => customer.customerId,
+          ),
+        ),
+      ].slice(0, 2) as string[];
+      assert.equal(policyCustomerIds.length, 2);
+      const customerResponse = await request(
+        `/api/admin/policies/all?customerId=${policyCustomerIds.map(encodeURIComponent).join(",")}`,
+        "GET",
+        undefined,
+        cookie,
+      );
+      assert.equal(customerResponse.status, 200);
+      const customerResult = await customerResponse.json();
+      assert.ok(customerResult.total > 0);
+      const selectedCustomerIdSet = new Set(policyCustomerIds);
+      assert.ok(
+        customerResult.items.every((item: { customerId: string }) =>
+          selectedCustomerIdSet.has(item.customerId),
+        ),
+      );
+      assert.deepEqual(
+        customerResult.items.map((item: { policyId: string }) => item.policyId),
+        policyList.items
+          .filter((item: { customerId: string }) =>
+            selectedCustomerIdSet.has(item.customerId),
+          )
+          .map((item: { policyId: string }) => item.policyId),
+      );
+      const intersectedResponse = await request(
+        `/api/admin/policies/all?policyId=${encodeURIComponent(selectedPolicies[0].policyId)}&customerId=${encodeURIComponent(selectedPolicies[0].customerId)}`,
+        "GET",
+        undefined,
+        cookie,
+      );
+      assert.equal(intersectedResponse.status, 200);
+      const intersectedResult = await intersectedResponse.json();
+      assert.equal(intersectedResult.total, 1);
+      assert.equal(
+        intersectedResult.items[0].policyId,
+        selectedPolicies[0].policyId,
+      );
       for (const item of policyList.items) {
         assert.deepEqual(Object.keys(item), [...CONTACT_COLUMNS]);
         const policy = storedPolicies.find(

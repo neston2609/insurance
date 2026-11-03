@@ -23,20 +23,30 @@ export type PolicyListItem = Omit<
   dnc: boolean | null;
 };
 
-/** Read every policy without campaign eligibility rules or pagination. */
-export async function listAllPolicies(now = new Date()) {
+/** Read policies without campaign eligibility rules or pagination. */
+export async function listAllPolicies(
+  now = new Date(),
+  filters: { policyIds?: string[]; customerIds?: string[] } = {},
+) {
   const [allPolicies, allCustomers, allProducts] = await Promise.all([
     policies.all(),
     customers.all(),
     products.all(),
   ]);
+  const policyIds = new Set(filters.policyIds ?? []);
+  const customerIds = new Set(filters.customerIds ?? []);
+  const matchingPolicies = allPolicies.filter(
+    (policy) =>
+      (!policyIds.size || policyIds.has(policy.policyId)) &&
+      (!customerIds.size || customerIds.has(policy.customerId)),
+  );
   const customerMap = new Map(
     allCustomers.map((customer) => [customer.customerId, customer]),
   );
   const productMap = new Map(
     allProducts.map((product) => [product.productId, product]),
   );
-  const items: PolicyListItem[] = allPolicies.map((policy) => {
+  const items: PolicyListItem[] = matchingPolicies.map((policy) => {
     const customer = customerMap.get(policy.customerId);
     const product = productMap.get(policy.productId);
     const phone = customer?.phone || "";

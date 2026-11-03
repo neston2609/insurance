@@ -43,6 +43,8 @@ export const adminDataRouter = Router();
 adminDataRouter.use((request, response, next) => {
   if (
     (request.method === "GET" && request.path === "/policies/all") ||
+    (request.method === "GET" &&
+      ["/customers/all", "/products/all"].includes(request.path)) ||
     (request.method === "PATCH" &&
       /^\/customers\/[^/]+\/dnc$/.test(request.path))
   ) {
@@ -57,10 +59,15 @@ const policyReadLimiter = rateLimit({
   limit: 60,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: { message: "Too many policy requests. Please try again later." },
+  message: { message: "Too many API requests. Please try again later." },
 });
 
 const string = (value: unknown) => (typeof value === "string" ? value : "");
+const queryValues = (value: unknown): string[] =>
+  (Array.isArray(value) ? value : [value])
+    .flatMap((item) => (typeof item === "string" ? item.split(",") : []))
+    .map((item) => item.trim())
+    .filter(Boolean);
 const number = (value: unknown, fallback: number) =>
   Number.isFinite(Number(value)) && value !== undefined
     ? Number(value)
@@ -100,6 +107,20 @@ adminDataRouter.get("/customers", async (request, response) => {
   });
   response.json(result);
 });
+adminDataRouter.get(
+  "/customers/all",
+  policyReadLimiter,
+  requireManagementAuth,
+  async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.vary("Cookie, Authorization");
+    const customerIds = new Set(queryValues(request.query.customerId));
+    const items = (await customers.all()).filter(
+      (item) => !customerIds.size || customerIds.has(item.customerId),
+    );
+    response.json({ items, total: items.length });
+  },
+);
 adminDataRouter.get("/customers/:id/360", async (request, response) => {
   response.json(await getCustomer360(request.params.id));
 });
@@ -161,6 +182,20 @@ adminDataRouter.get("/products", async (request, response) => {
     }),
   );
 });
+adminDataRouter.get(
+  "/products/all",
+  policyReadLimiter,
+  requireManagementAuth,
+  async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.vary("Cookie, Authorization");
+    const productIds = new Set(queryValues(request.query.productId));
+    const items = (await products.all()).filter(
+      (item) => !productIds.size || productIds.has(item.productId),
+    );
+    response.json({ items, total: items.length });
+  },
+);
 adminDataRouter.get("/products/:id", async (request, response) => {
   const item = await products.findById("productId", request.params.id);
   if (!item) throw httpError(404, "Product not found");
@@ -270,10 +305,15 @@ adminDataRouter.get(
   "/policies/all",
   policyReadLimiter,
   requireManagementAuth,
-  async (_request, response) => {
+  async (request, response) => {
     response.setHeader("Cache-Control", "no-store");
     response.vary("Cookie, Authorization");
-    response.json(await listAllPolicies());
+    response.json(
+      await listAllPolicies(new Date(), {
+        policyIds: queryValues(request.query.policyId),
+        customerIds: queryValues(request.query.customerId),
+      }),
+    );
   },
 );
 adminDataRouter.get("/renewals", async (request, response) => {

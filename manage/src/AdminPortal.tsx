@@ -2542,7 +2542,12 @@ function Audit() {
   );
 }
 
-const managementApiEndpoints = [
+const managementApiEndpoints: readonly (readonly [
+  string,
+  string,
+  string,
+  string,
+])[] = [
   [
     "GET",
     "/api/health",
@@ -2558,8 +2563,8 @@ const managementApiEndpoints = [
   [
     "POST",
     "/api/admin/auth/login",
-    "Public",
-    "Sign in and receive the Management session cookie.",
+    "Public; rate limited",
+    "Sign in and receive the Management session cookie; login attempts are rate limited.",
   ],
   [
     "POST",
@@ -2584,6 +2589,12 @@ const managementApiEndpoints = [
     "/api/admin/customers?search=&page=1&pageSize=20",
     "Management session",
     "Search and page customers.",
+  ],
+  [
+    "GET",
+    "/api/admin/customers/all?customerId=",
+    "Management session or Basic Auth",
+    "Read all customers or exact-match one or multiple customerId values.",
   ],
   [
     "GET",
@@ -2622,6 +2633,12 @@ const managementApiEndpoints = [
     "Management session",
     "Search and page products.",
   ],
+  [
+    "GET",
+    "/api/admin/products/all?productId=",
+    "Management session or Basic Auth",
+    "Read all products or exact-match one or multiple productId values.",
+  ],
   ["GET", "/api/admin/products/:id", "Management session", "Read one product."],
   ["POST", "/api/admin/products", "Management session", "Create a product."],
   ["PUT", "/api/admin/products/:id", "Management session", "Update a product."],
@@ -2639,9 +2656,9 @@ const managementApiEndpoints = [
   ],
   [
     "GET",
-    "/api/admin/policies/all",
+    "/api/admin/policies/all?policyId=&customerId=",
     "Management session or Basic Auth",
-    "Read the complete flattened policy feed using a Management session or Basic Auth.",
+    "Read all flattened policies, or exact-match one or multiple policyId/customerId values using a Management session or Basic Auth.",
   ],
   [
     "GET",
@@ -2750,6 +2767,807 @@ const managementApiEndpoints = [
 ] as const;
 
 function ApiManual() {
+  const [selectedEndpoint, setSelectedEndpoint] = useState<
+    (typeof managementApiEndpoints)[number] | null
+  >(null);
+  const endpointExamples: Record<
+    string,
+    { request: string; response: string }
+  > = {
+    "/api/admin/customers/all?customerId=": {
+      request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  'https://mfecinsure.demohub24.com/api/admin/customers/all?customerId=CUST00001,CUST00002'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "customerId": "CUST00001",
+      "firstName": "Example",
+      "lastName": "Customer",
+      "phone": "0812345678",
+      "email": "customer@example.com",
+      "preferredChannel": "LINE",
+      "province": "Bangkok",
+      "dnc": false,
+      "createdAt": "2026-01-10T08:00:00.000Z",
+      "updatedAt": "2026-01-10T08:00:00.000Z"
+    }
+  ],
+  "total": 1
+}`,
+    },
+    "/api/admin/products/all?productId=": {
+      request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  'https://mfecinsure.demohub24.com/api/admin/products/all?productId=PROD00001,PROD00002'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": "PROD00001",
+      "productCode": "MOTOR-001",
+      "slug": "motor-one",
+      "productName": "Example Motor Insurance",
+      "productType": "MOTOR",
+      "vehicleType": "CAR",
+      "insuranceClass": "1",
+      "shortDescription": "Example coverage",
+      "description": "Example product description",
+      "insurerName": "Example Insurance",
+      "startingPremium": 12000,
+      "coverage": {
+        "thirdPartyProperty": true,
+        "thirdPartyInjury": true,
+        "ownVehicleCollision": true,
+        "vehicleTheft": true,
+        "fire": true,
+        "flood": true,
+        "personalAccident": true,
+        "medicalExpense": true,
+        "driverBail": true
+      },
+      "coverageLimits": {},
+      "features": [],
+      "terms": [],
+      "eligibleVehicleTypes": ["CAR"],
+      "minVehicleAge": 0,
+      "maxVehicleAge": 20,
+      "active": true,
+      "featured": false,
+      "displayOrder": 1,
+      "createdAt": "2026-01-10T08:00:00.000Z",
+      "updatedAt": "2026-01-10T08:00:00.000Z"
+    }
+  ],
+  "total": 1
+}`,
+    },
+    "/api/admin/policies/all?policyId=&customerId=": {
+      request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  'https://mfecinsure.demohub24.com/api/admin/policies/all?policyId=POL00001&policyId=POL00002&customerId=CUST00001'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "customerId": "CUST00001",
+      "policyId": "POL00001",
+      "policyNumber": "DEMO-EXAMPLE-001",
+      "firstName": "Example",
+      "lastName": "Customer",
+      "phone": "+66810000000",
+      "productName": "Example Motor Insurance",
+      "vehicleType": "CAR",
+      "vehicleBrand": "Toyota",
+      "vehicleModel": "Yaris",
+      "licensePlate": "EXAMPLE",
+      "insurerName": "Example Insurance",
+      "premium": 12000,
+      "effectiveDate": "2025-12-02",
+      "expiryDate": "2026-12-01",
+      "daysUntilExpiry": 28,
+      "renewalStatus": "CONTACT_PENDING",
+      "preferredChannel": "LINE",
+      "digitalSent": false,
+      "voiceCalled": false,
+      "customerIntent": "UNKNOWN",
+      "callbackDateTime": null,
+      "dnc": false
+    }
+  ],
+  "total": 1
+}`,
+    },
+    "/api/admin/customers?search=&page=1&pageSize=20": {
+      request: `curl -i --cookie cookies.txt \\
+  'https://mfecinsure.demohub24.com/api/admin/customers?search=example&page=1&pageSize=20'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "customerId": "CUST00001",
+      "firstName": "Example",
+      "lastName": "Customer",
+      "phone": "0812345678",
+      "email": "customer@example.com",
+      "preferredChannel": "LINE",
+      "province": "Bangkok",
+      "dnc": false,
+      "createdAt": "2026-01-10T08:00:00.000Z",
+      "updatedAt": "2026-01-10T08:00:00.000Z"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "pageSize": 20
+}`,
+    },
+    "/api/admin/products?search=&page=1&pageSize=20": {
+      request: `curl -i --cookie cookies.txt \\
+  'https://mfecinsure.demohub24.com/api/admin/products?search=motor&page=1&pageSize=20'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": "PROD00001",
+      "productCode": "MOTOR-001",
+      "slug": "motor-one",
+      "productName": "Example Motor Insurance",
+      "productType": "MOTOR",
+      "vehicleType": "CAR",
+      "insuranceClass": "1",
+      "shortDescription": "Example coverage",
+      "description": "Example product description",
+      "insurerName": "Example Insurance",
+      "startingPremium": 12000,
+      "coverage": {
+        "thirdPartyProperty": true,
+        "thirdPartyInjury": true,
+        "ownVehicleCollision": true,
+        "vehicleTheft": true,
+        "fire": true,
+        "flood": true,
+        "personalAccident": true,
+        "medicalExpense": true,
+        "driverBail": true
+      },
+      "coverageLimits": {},
+      "features": [],
+      "terms": [],
+      "eligibleVehicleTypes": ["CAR"],
+      "minVehicleAge": 0,
+      "maxVehicleAge": 20,
+      "active": true,
+      "featured": false,
+      "displayOrder": 1,
+      "createdAt": "2026-01-10T08:00:00.000Z",
+      "updatedAt": "2026-01-10T08:00:00.000Z"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "pageSize": 20
+}`,
+    },
+    "/api/admin/customers/:id/dnc": {
+      request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" -X PATCH \\
+  -H 'Content-Type: application/json' \\
+  -d '{"dnc":true}' \\
+  'https://mfecinsure.demohub24.com/api/admin/customers/CUST00001/dnc'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "customerId": "CUST00001",
+  "firstName": "Example",
+  "lastName": "Customer",
+  "phone": "0812345678",
+  "email": "customer@example.com",
+  "preferredChannel": "LINE",
+  "province": "Bangkok",
+  "dnc": true,
+  "createdAt": "2026-01-10T08:00:00.000Z",
+  "updatedAt": "2026-11-03T08:00:00.000Z"
+}`,
+    },
+    "/api/health": {
+      request: `curl -i 'https://mfecinsure.demohub24.com/api/health'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "ok": true,
+  "service": "insurance-manage",
+  "time": "2026-11-03T08:00:00.000Z"
+}`,
+    },
+    "/api/admin/auth/session?portal=manage": {
+      request: `curl -i \\
+  'https://mfecinsure.demohub24.com/api/admin/auth/session?portal=manage'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "authenticated": false,
+  "username": ""
+}`,
+    },
+    "/api/admin/auth/login": {
+      request: `curl -i -c cookies.txt -X POST \\
+  -H 'Content-Type: application/json' \\
+  --data-binary "{\"username\":\"$MANAGE_USERNAME\",\"password\":\"$MANAGE_PASSWORD\",\"portal\":\"manage\"}" \\
+  'https://mfecinsure.demohub24.com/api/admin/auth/login'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+Set-Cookie: manage.sid=...; HttpOnly; Secure
+
+{
+  "authenticated": true,
+  "username": "admin"
+}`,
+    },
+    "/api/admin/auth/logout": {
+      request: `curl -i --cookie cookies.txt -X POST \\
+  -H 'Content-Type: application/json' \\
+  --data-binary '{"portal":"manage"}' \\
+  'https://mfecinsure.demohub24.com/api/admin/auth/logout'`,
+      response: `HTTP/1.1 204 No Content`,
+    },
+    "/api/admin/auth/change-password": {
+      request: `curl -i --cookie cookies.txt -X POST \\
+  -H 'Content-Type: application/json' \\
+  --data-binary '{"currentPassword":"YOUR_CURRENT_PASSWORD","newPassword":"YOUR_NEW_PASSWORD","confirmPassword":"YOUR_NEW_PASSWORD"}' \\
+  'https://mfecinsure.demohub24.com/api/admin/auth/change-password'`,
+      response: `HTTP/1.1 204 No Content`,
+    },
+    "/api/public/call-back-results": {
+      request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" -X POST \\
+  -H 'Content-Type: application/json' \\
+  -d '{"customerId":"CUST00001","policyId":"POL00001","status":"CONTACTED","agentName":"Support Agent","detail":"Interested in renewal"}' \\
+  'https://mfecinsure.demohub24.com/api/public/call-back-results'`,
+      response: `HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  "callBackResultId": "EXAMPLE_UUID",
+  "customerId": "CUST00001",
+  "customerName": "Example Customer",
+  "policyId": "POL00001",
+  "policyNumber": "DEMO-EXAMPLE-001",
+  "expireDate": "2026-12-01",
+  "productVehicleInformation": "Example Motor Insurance — CAR / Toyota Yaris / 2020 / EXAMPLE / Bangkok",
+  "customerIntent": "Interested in renewal",
+  "contactedBy": "Support Agent",
+  "status": "CONTACTED",
+  "createdAt": "2026-11-03T08:00:00.000Z"
+}`,
+    },
+    "/api/public/policies/renew": {
+      request: `curl -i -X POST \\
+  -H 'Content-Type: application/json' \\
+  -d '{"policyNumber":"DEMO-EXAMPLE-001"}' \\
+  'https://mfecinsure.demohub24.com/api/public/policies/renew'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "policyId": "POL00001",
+  "policyNumber": "DEMO-EXAMPLE-001",
+  "previousExpiryDate": "2026-12-01",
+  "effectiveDate": "2026-12-02",
+  "expiryDate": "2027-12-01",
+  "renewalStatus": "RENEWED",
+  "updatedAt": "2026-11-03T08:00:00.000Z",
+  "alreadyRenewed": false
+}`,
+    },
+  };
+  function apiExample(
+    method: string,
+    endpoint: string,
+    authentication: string,
+  ) {
+    const exact = endpointExamples[endpoint];
+    if (exact) return exact;
+
+    const customer = {
+      customerId: "CUST00001",
+      firstName: "Example",
+      lastName: "Customer",
+      phone: "0812345678",
+      email: "customer@example.com",
+      preferredChannel: "LINE",
+      province: "Bangkok",
+      dnc: false,
+      createdAt: "2026-01-10T08:00:00.000Z",
+      updatedAt: "2026-01-10T08:00:00.000Z",
+    };
+    const product = {
+      productId: "PROD00001",
+      productCode: "MOTOR-001",
+      slug: "motor-one",
+      productName: "Example Motor Insurance",
+      productType: "MOTOR",
+      vehicleType: "CAR",
+      insuranceClass: "1",
+      shortDescription: "Example coverage",
+      description: "Example product description",
+      insurerName: "Example Insurance",
+      startingPremium: 12000,
+      coverage: {
+        thirdPartyProperty: true,
+        thirdPartyInjury: true,
+        ownVehicleCollision: true,
+        vehicleTheft: true,
+        fire: true,
+        flood: true,
+        personalAccident: true,
+        medicalExpense: true,
+        driverBail: true,
+      },
+      coverageLimits: {},
+      features: [],
+      terms: [],
+      eligibleVehicleTypes: ["CAR"],
+      minVehicleAge: 0,
+      maxVehicleAge: 20,
+      active: true,
+      featured: false,
+      displayOrder: 1,
+      createdAt: "2026-01-10T08:00:00.000Z",
+      updatedAt: "2026-01-10T08:00:00.000Z",
+    };
+    const policy = {
+      policyId: "POL00001",
+      policyNumber: "DEMO-EXAMPLE-001",
+      customerId: customer.customerId,
+      productId: product.productId,
+      purchaseDate: "2025-12-01",
+      effectiveDate: "2025-12-02",
+      expiryDate: "2026-12-01",
+      premium: 12000,
+      sumInsured: 500000,
+      insurerName: "Example Insurance",
+      vehicle: {
+        vehicleType: "CAR",
+        brand: "Toyota",
+        model: "Yaris",
+        year: 2020,
+        licensePlate: "EXAMPLE",
+        province: "Bangkok",
+      },
+      coverageSnapshot: product.coverage,
+      renewalStatus: "CONTACT_PENDING",
+      preferredChannel: "LINE",
+      digitalSent: false,
+      voiceCalled: false,
+      customerIntent: "UNKNOWN",
+      callbackDateTime: null,
+      genesys: {
+        contactListId: "",
+        contactId: "",
+        syncStatus: "NOT_SYNCED",
+        lastSyncAt: "",
+        lastSyncError: null,
+        lastPayloadHash: "",
+        lastSyncedBy: "",
+      },
+      createdAt: "2026-01-10T08:00:00.000Z",
+      updatedAt: "2026-01-10T08:00:00.000Z",
+    };
+    const callbackResult = {
+      callBackResultId: "EXAMPLE_UUID",
+      customerId: customer.customerId,
+      customerName: "Example Customer",
+      policyId: policy.policyId,
+      policyNumber: policy.policyNumber,
+      expireDate: policy.expiryDate,
+      productVehicleInformation:
+        "Example Motor Insurance — CAR / Toyota Yaris / 2020 / EXAMPLE / Bangkok",
+      customerIntent: "Interested in renewal",
+      contactedBy: "Support Agent",
+      status: "CONTACTED",
+      createdAt: "2026-11-03T08:00:00.000Z",
+    };
+    const bodyExamples: Record<string, unknown> = {
+      "/api/admin/customers": {
+        firstName: "Example",
+        lastName: "Customer",
+        phone: "0812345678",
+        email: "customer@example.com",
+        preferredChannel: "LINE",
+        province: "Bangkok",
+        dnc: false,
+      },
+      "/api/admin/customers/:id": { firstName: "Example" },
+      "/api/admin/customers/:id/dnc": { dnc: true },
+      "/api/admin/products": {
+        productCode: product.productCode,
+        slug: product.slug,
+        productName: product.productName,
+        productType: product.productType,
+        vehicleType: product.vehicleType,
+        insuranceClass: product.insuranceClass,
+        shortDescription: product.shortDescription,
+        description: product.description,
+        insurerName: product.insurerName,
+        startingPremium: product.startingPremium,
+        coverage: product.coverage,
+        coverageLimits: product.coverageLimits,
+        features: product.features,
+        terms: product.terms,
+        eligibleVehicleTypes: product.eligibleVehicleTypes,
+        minVehicleAge: product.minVehicleAge,
+        maxVehicleAge: product.maxVehicleAge,
+        active: product.active,
+        featured: product.featured,
+        displayOrder: product.displayOrder,
+      },
+      "/api/admin/products/:id": { productName: product.productName },
+      "/api/admin/policies": {
+        customerId: policy.customerId,
+        productId: policy.productId,
+        purchaseDate: policy.purchaseDate,
+        effectiveDate: policy.effectiveDate,
+        expiryDate: policy.expiryDate,
+        premium: policy.premium,
+        sumInsured: policy.sumInsured,
+        insurerName: policy.insurerName,
+        vehicle: policy.vehicle,
+        renewalStatus: policy.renewalStatus,
+        preferredChannel: policy.preferredChannel,
+        digitalSent: policy.digitalSent,
+        voiceCalled: policy.voiceCalled,
+        customerIntent: policy.customerIntent,
+        callbackDateTime: policy.callbackDateTime,
+      },
+      "/api/admin/policies/:id": { renewalStatus: "CONTACTED" },
+      "/api/admin/policies/:id/renew": {},
+      "/api/admin/settings/backups/:stamp/restore": {},
+      "/api/public/policies/renew": { policyNumber: policy.policyNumber },
+    };
+    const body = bodyExamples[endpoint];
+    const url = `https://mfecinsure.demohub24.com${endpoint
+      .replace(":stamp", "20261103080000000")
+      .replace("/customers/:id", "/customers/CUST00001")
+      .replace("/products/:id", "/products/PROD00001")
+      .replace("/policies/:id", "/policies/POL00001")
+      .replace(":id", "EXAMPLE_ID")}`
+      .replace("search=&", "search=example&")
+      .replace("q=term", "q=example");
+    const auth = authentication.includes("Basic Auth")
+      ? '--user "$MANAGE_USERNAME:$MANAGE_PASSWORD" '
+      : authentication === "Public" || authentication === "Public; rate limited"
+        ? ""
+        : "--cookie cookies.txt ";
+    const hasBody = !["GET", "HEAD", "DELETE"].includes(method);
+    const request = [
+      `curl -i ${auth}${method === "GET" ? "" : `-X ${method} `}`.trimEnd(),
+      ...(hasBody
+        ? [
+            "  -H 'Content-Type: application/json'",
+            `  -d '${JSON.stringify(body ?? {})}'`,
+          ]
+        : []),
+      `  '${url}'`,
+    ].join(" \\\n");
+    const responseBody: unknown =
+      endpoint === "/api/admin/customers" && method === "POST"
+        ? { ...customer, customerId: "CUST00002" }
+        : endpoint === "/api/admin/customers/:id" && method === "PUT"
+          ? { ...customer, firstName: "Updated" }
+          : endpoint === "/api/admin/customers/:id/dnc"
+            ? { ...customer, dnc: true, updatedAt: "2026-11-03T08:00:00.000Z" }
+            : endpoint === "/api/admin/customers/:id"
+              ? customer
+              : endpoint === "/api/admin/customers/:id/360"
+                ? { customer, policies: [policy], inquiries: [] }
+                : endpoint === "/api/admin/products" && method === "POST"
+                  ? { ...product, productId: "PROD00002" }
+                  : endpoint === "/api/admin/products/:id" && method === "PUT"
+                    ? { ...product, productName: "Updated Motor Insurance" }
+                    : endpoint === "/api/admin/products/:id"
+                      ? product
+                      : endpoint === "/api/admin/policies" && method === "POST"
+                        ? { ...policy, policyId: "POL00002" }
+                        : endpoint === "/api/admin/policies/:id" &&
+                            method === "PUT"
+                          ? { ...policy, renewalStatus: "CONTACTED" }
+                          : endpoint === "/api/admin/policies/:id"
+                            ? {
+                                ...policy,
+                                daysUntilExpiry: 28,
+                                customer,
+                                product,
+                              }
+                            : endpoint === "/api/admin/policies/:id/renew"
+                              ? {
+                                  policyId: policy.policyId,
+                                  policyNumber: policy.policyNumber,
+                                  previousExpiryDate: policy.expiryDate,
+                                  effectiveDate: "2026-12-02",
+                                  expiryDate: "2027-12-01",
+                                  renewalStatus: "RENEWED",
+                                  updatedAt: "2026-11-03T08:00:00.000Z",
+                                  alreadyRenewed: false,
+                                }
+                              : endpoint.startsWith("/api/admin/renewals?")
+                                ? {
+                                    items: [
+                                      {
+                                        ...policy,
+                                        daysUntilExpiry: 28,
+                                        customer,
+                                        product,
+                                      },
+                                    ],
+                                    total: 1,
+                                    page: 1,
+                                    pageSize: 20,
+                                  }
+                                : endpoint.startsWith(
+                                      "/api/admin/call-back-results?",
+                                    )
+                                  ? {
+                                      items: [callbackResult],
+                                      total: 1,
+                                      page: 1,
+                                      pageSize: 20,
+                                    }
+                                  : endpoint === "/api/admin/audit?page=1"
+                                    ? {
+                                        items: [],
+                                        business: [],
+                                        genesys: [],
+                                        total: 0,
+                                        page: 1,
+                                        pageSize: 20,
+                                      }
+                                    : endpoint ===
+                                        "/api/admin/customers?search=&page=1&pageSize=20"
+                                      ? {
+                                          items: [customer],
+                                          total: 1,
+                                          page: 1,
+                                          pageSize: 20,
+                                        }
+                                      : endpoint ===
+                                          "/api/admin/products?search=&page=1&pageSize=20"
+                                        ? {
+                                            items: [product],
+                                            total: 1,
+                                            page: 1,
+                                            pageSize: 20,
+                                          }
+                                        : endpoint ===
+                                            "/api/admin/policies?search=&page=1&pageSize=20"
+                                          ? {
+                                              items: [
+                                                {
+                                                  ...policy,
+                                                  daysUntilExpiry: 28,
+                                                  customer,
+                                                  product,
+                                                },
+                                              ],
+                                              total: 1,
+                                              page: 1,
+                                              pageSize: 20,
+                                            }
+                                          : endpoint ===
+                                              "/api/admin/search?q=term"
+                                            ? {
+                                                customers: [customer],
+                                                policies: [policy],
+                                              }
+                                            : endpoint === "/api/admin/meta"
+                                              ? {
+                                                  customers: [customer],
+                                                  products: [product],
+                                                  campaigns: [],
+                                                }
+                                              : endpoint ===
+                                                  "/api/admin/dashboard"
+                                                ? {
+                                                    kpis: {
+                                                      totalCustomers: 1,
+                                                      activePolicies: 1,
+                                                      totalPremium: 12000,
+                                                      expiring7: 0,
+                                                      expiring30: 1,
+                                                      expiring60: 1,
+                                                      expiring90: 1,
+                                                      contactPending: 1,
+                                                      renewed: 0,
+                                                      dncCustomers: 0,
+                                                      genesysSynced: 0,
+                                                      genesysFailed: 0,
+                                                    },
+                                                    charts: {
+                                                      byProduct: [
+                                                        {
+                                                          label:
+                                                            product.productName,
+                                                          value: 1,
+                                                        },
+                                                      ],
+                                                      byRenewal: [
+                                                        {
+                                                          label:
+                                                            "CONTACT_PENDING",
+                                                          value: 1,
+                                                        },
+                                                      ],
+                                                      byChannel: [
+                                                        {
+                                                          label: "LINE",
+                                                          value: 1,
+                                                        },
+                                                      ],
+                                                      byGenesys: [
+                                                        {
+                                                          label: "NOT_SYNCED",
+                                                          value: 1,
+                                                        },
+                                                      ],
+                                                    },
+                                                  }
+                                                : endpoint ===
+                                                    "/api/admin/auth/session?portal=manage"
+                                                  ? {
+                                                      authenticated: false,
+                                                      username: "",
+                                                    }
+                                                  : endpoint ===
+                                                      "/api/admin/settings/backup"
+                                                    ? {
+                                                        directory:
+                                                          "20261103080000000",
+                                                        files: [
+                                                          "customers.json",
+                                                          "products.json",
+                                                          "policies.json",
+                                                        ],
+                                                        downloadUrl:
+                                                          "/api/admin/settings/backups/20261103080000000/download",
+                                                      }
+                                                    : endpoint ===
+                                                        "/api/admin/settings/backups"
+                                                      ? {
+                                                          items: [
+                                                            {
+                                                              stamp:
+                                                                "20261103080000000",
+                                                              createdAt:
+                                                                "2026-11-03T08:00:00.000Z",
+                                                              files: [
+                                                                "customers.json",
+                                                                "products.json",
+                                                                "policies.json",
+                                                              ],
+                                                            },
+                                                          ],
+                                                        }
+                                                      : endpoint ===
+                                                          "/api/admin/settings/backups/:stamp/restore"
+                                                        ? {
+                                                            restored:
+                                                              "20261103080000000",
+                                                            safetyBackup:
+                                                              "20261103080000001",
+                                                            files: [
+                                                              "customers.json",
+                                                              "products.json",
+                                                              "policies.json",
+                                                            ],
+                                                          }
+                                                        : endpoint ===
+                                                            "/api/admin/settings/backups/:stamp/download"
+                                                          ? {
+                                                              note: "Backup contains local business records; administrator credentials and sessions are excluded.",
+                                                              files: {
+                                                                "customers.json":
+                                                                  [customer],
+                                                                "products.json":
+                                                                  [product],
+                                                                "policies.json":
+                                                                  [policy],
+                                                              },
+                                                            }
+                                                          : endpoint ===
+                                                              "/api/admin/policies/renewal-events"
+                                                            ? null
+                                                            : method ===
+                                                                  "GET" &&
+                                                                endpoint.includes(
+                                                                  "?page=",
+                                                                )
+                                                              ? {
+                                                                  items: [],
+                                                                  total: 0,
+                                                                  page: 1,
+                                                                  pageSize: 20,
+                                                                }
+                                                              : method === "GET"
+                                                                ? {
+                                                                    items: [],
+                                                                    total: 0,
+                                                                  }
+                                                                : {
+                                                                    message:
+                                                                      "Request processed",
+                                                                  };
+    const status =
+      method === "POST" && endpoint === "/api/admin/auth/login"
+        ? "200 OK"
+        : method === "DELETE" ||
+            endpoint === "/api/admin/auth/logout" ||
+            endpoint === "/api/admin/auth/change-password"
+          ? "204 No Content"
+          : (method === "POST" &&
+                [
+                  "/api/admin/customers",
+                  "/api/admin/products",
+                  "/api/admin/policies",
+                  "/api/admin/settings/backup",
+                ].includes(endpoint)) ||
+              endpoint === "/api/public/call-back-results"
+            ? "201 Created"
+            : "200 OK";
+    const response =
+      endpoint === "/api/admin/policies/renewal-events"
+        ? `HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+: connected
+
+event: policy-renewed
+data: {"policyId":"POL00001","policyNumber":"DEMO-EXAMPLE-001","expiryDate":"2027-12-01","renewalStatus":"RENEWED"}`
+        : endpoint === "/api/admin/settings/backups/:stamp/download"
+          ? `HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Disposition: attachment; filename="mfec-backup-20261103080000000.json"
+
+${JSON.stringify(
+  {
+    note: "Backup contains the local insurance business records. Administrator credentials and sessions are excluded.",
+    files: {
+      "customers.json": [customer],
+      "products.json": [product],
+      "policies.json": [policy],
+    },
+  },
+  null,
+  2,
+)}`
+          : `HTTP/1.1 ${status}${
+              status.startsWith("204")
+                ? ""
+                : `
+Content-Type: application/json
+
+${JSON.stringify(responseBody, null, 2)}`
+            }`;
+    return { request, response };
+  }
+  function selectedEndpointExample() {
+    if (!selectedEndpoint) return null;
+    const exact = endpointExamples[selectedEndpoint[1]];
+    if (exact) return exact;
+    return apiExample(
+      selectedEndpoint[0],
+      selectedEndpoint[1],
+      selectedEndpoint[2],
+    );
+  }
   return (
     <>
       <PageHead
@@ -2765,10 +3583,10 @@ function ApiManual() {
           endpoints require a signed-in Management session cookie. For external
           tools, sign in first and retain the returned cookie. The read-only
           <code> /api/admin/policies/all</code> feed also accepts HTTP Basic
-          Auth. The DNC update and public callback result APIs also accept Basic
-          Auth with Management username and password; the policy renewal
-          endpoint is public and rate limited. Send JSON requests with{" "}
-          <code>Content-Type: application/json</code>.
+          Auth. The DNC update, complete Customers/Products feeds, and public
+          callback result APIs also accept Basic Auth with Management username
+          and password; the policy renewal endpoint is public and rate limited.
+          Send JSON requests with <code>Content-Type: application/json</code>.
         </p>
       </section>
       <section className="admin-panel api-manual-panel">
@@ -2805,10 +3623,21 @@ curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" -X PATCH \\
         <h2>Example: read policies with Basic Auth</h2>
         <p>
           This policy-feed endpoint also accepts the active Management session
-          cookie. Basic Auth is useful for external server-to-server callers.
+          cookie. Omitting filters continues to return all policies; filter
+          values are exact matches. Send repeated query parameters or
+          comma-separated IDs. When both filters are present, both conditions
+          must match.
         </p>
         <pre>{`curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
-  'https://mfecinsure.demohub24.com/api/admin/policies/all'`}</pre>
+  'https://mfecinsure.demohub24.com/api/admin/policies/all'
+
+# Several policy IDs
+curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  'https://mfecinsure.demohub24.com/api/admin/policies/all?policyId=POL00001&policyId=POL00002'
+
+# Policies for one or more customers
+curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  'https://mfecinsure.demohub24.com/api/admin/policies/all?customerId=CUST00001,CUST00002'`}</pre>
       </section>
       <section className="admin-panel api-manual-panel">
         <h2>All endpoints</h2>
@@ -2829,7 +3658,21 @@ curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" -X PATCH \\
                     <td>
                       <Badge value={method} />
                     </td>
-                    <td className="mono">{endpoint}</td>
+                    <td className="mono">
+                      <button
+                        className="api-endpoint-link"
+                        onClick={() =>
+                          setSelectedEndpoint([
+                            method,
+                            endpoint,
+                            auth,
+                            description,
+                          ])
+                        }
+                      >
+                        {endpoint}
+                      </button>
+                    </td>
                     <td>{auth}</td>
                     <td>{description}</td>
                   </tr>
@@ -2839,6 +3682,34 @@ curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" -X PATCH \\
           </table>
         </div>
       </section>
+      {selectedEndpoint && (
+        <Modal
+          title={`${selectedEndpoint[0]} ${selectedEndpoint[1]}`}
+          onClose={() => setSelectedEndpoint(null)}
+        >
+          <div className="api-detail-modal">
+            {(() => {
+              const example = selectedEndpointExample()!;
+              return (
+                <>
+                  <p>{selectedEndpoint[3]}</p>
+                  <p>
+                    <strong>Authentication:</strong> {selectedEndpoint[2]}
+                  </p>
+                  <h3>Example request</h3>
+                  <pre>{example.request}</pre>
+                  <h3>Example response</h3>
+                  <pre>{example.response}</pre>
+                  <p className="api-manual-note">
+                    Replace the example IDs and values with your data. Use HTTPS
+                    in production and keep Management credentials private.
+                  </p>
+                </>
+              );
+            })()}
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

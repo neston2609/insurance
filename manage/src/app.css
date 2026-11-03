@@ -1620,6 +1620,56 @@ a {
 .api-manual-panel .admin-table {
   min-width: 820px;
 }
+.api-endpoint-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a4212b;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: #d8a2a6;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.api-endpoint-link:hover,
+.api-endpoint-link:focus-visible {
+  color: var(--red-dark);
+  text-decoration-color: currentColor;
+}
+.api-detail-modal {
+  padding: 20px 22px 22px;
+}
+.api-detail-modal p {
+  margin: 0 0 14px;
+  color: #5f6b71;
+  line-height: 1.6;
+}
+.api-detail-modal h3 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+}
+.api-detail-modal pre {
+  max-height: 42vh;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f8fafb;
+  color: #263238;
+  font:
+    12px/1.6 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.api-detail-modal .api-manual-note {
+  margin: 16px 0 0;
+  font-size: 12px;
+}
 .panel-head {
   display: flex;
   justify-content: space-between;

@@ -1,6 +1,6 @@
 # Insurance Management
 
-API สำหรับดึงกรมธรรม์ทั้งหมด 23 ฟิลด์: `GET /api/admin/policies/all` ดูวิธี Login และตัวอย่าง PowerShell, curl, Postman ใน [คู่มือ Policies API](docs/POLICIES-API.md) บันทึกผลการติดต่อลูกค้าได้ที่ `POST /api/public/call-back-results` โดยใช้ Basic Authentication ด้วยบัญชี Management เดียวกับหน้าเว็บ
+API สำหรับดึงข้อมูล Customers, Products และกรมธรรม์ รองรับ Basic Authentication ด้วยบัญชี Management เดียวกับหน้าเว็บ ดูวิธีใช้งานและตัวอย่างใน [คู่มือ Customers API](docs/CUSTOMERS-API.md), [Products API](docs/PRODUCTS-API.md) และ [Policies API](docs/POLICIES-API.md) บันทึกผลการติดต่อลูกค้าได้ที่ `POST /api/public/call-back-results`
 
 แอปนี้ติดตั้ง build และรันได้ด้วยตัวเอง ไม่ใช้ package, server, session หรือฐานข้อมูลจากแอปอื่น
 
