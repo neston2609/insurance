@@ -38,6 +38,8 @@ test("customer province choices cover all 77 provinces", () => {
 test("normalizes Thai mobile numbers and rejects other formats", () => {
   assert.equal(normalizeThaiPhone("081-234-5678"), "+66812345678");
   assert.equal(normalizeThaiPhone("+66 81 234 5678"), "+66812345678");
+  assert.equal(normalizeThaiPhone("66812345678"), "+66812345678");
+  assert.equal(normalizeThaiPhone("+66812345678"), "+66812345678");
   assert.throws(() => normalizeThaiPhone("020001111"));
 });
 

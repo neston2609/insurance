@@ -1,5 +1,70 @@
 # Customers API
 
+## Find a customer by mobile phone
+
+```http
+GET https://mfecinsure.demohub24.com/api/admin/customers/by-phone?phone=0818376355
+Authorization: Basic <base64(username:password)>
+```
+
+Use the Management account used to sign in to `/manage`, over HTTPS in production. The `phone` query parameter accepts Thai mobile numbers in local (`0818376355`), country-code (`66818376355`), or international (`+66818376355`) format. The API normalizes these formats before matching. It returns the customer record, all matching policies with full policy fields, linked product details, and `totalPolicies`. Invalid or missing phone numbers return `400`; a valid number with no matching customer returns `404`. Responses are not cached and requests are rate limited.
+
+```sh
+curl --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \
+  'https://mfecinsure.demohub24.com/api/admin/customers/by-phone?phone=%2B66818376355'
+```
+
+If you prefer not to put the phone number in the URL, send it in a JSON request body with `POST` to the same full URI:
+
+```sh
+curl --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \
+  -H 'Content-Type: application/json' \
+  -d '{"phone":"+66818376355"}' \
+  'https://mfecinsure.demohub24.com/api/admin/customers/by-phone'
+```
+
+Both `GET` and `POST` accept the same three phone formats and return the same response. Use HTTPS in production.
+
+Example response:
+
+```json
+{
+  "customer": {
+    "customerId": "CUST00001",
+    "firstName": "สมชาย",
+    "lastName": "ตัวอย่าง",
+    "phone": "+66812345678"
+  },
+  "policies": [
+    {
+      "policyId": "POL00001",
+      "policyNumber": "MFEC-MC-2026-00001",
+      "customerId": "CUST00001",
+      "productId": "PROD00006",
+      "effectiveDate": "2026-01-15",
+      "expiryDate": "2026-11-14",
+      "premium": 4250,
+      "vehicle": {
+        "vehicleType": "MOTORCYCLE",
+        "brand": "Honda",
+        "model": "PCX 160",
+        "year": 2024,
+        "licensePlate": "กข 1234",
+        "province": "กรุงเทพมหานคร"
+      },
+      "product": {
+        "productId": "PROD00006",
+        "productName": "Example motorcycle insurance"
+      },
+      "daysUntilExpiry": 0
+    }
+  ],
+  "totalPolicies": 1
+}
+```
+
+The response example is abbreviated; each policy includes all stored policy fields and the full linked product record.
+
 ## Get customers
 
 ```http

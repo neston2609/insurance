@@ -32,6 +32,7 @@ export type CampaignContact = Record<(typeof CONTACT_COLUMNS)[number], string>;
 export function normalizeThaiPhone(value: string): string {
   const phone = value.trim().replace(/[\s().-]/g, "");
   if (/^\+66[689]\d{8}$/.test(phone)) return phone;
+  if (/^66[689]\d{8}$/.test(phone)) return `+${phone}`;
   if (/^0[689]\d{8}$/.test(phone)) return `+66${phone.slice(1)}`;
   throw new Error("Enter a valid Thai mobile phone number");
 }

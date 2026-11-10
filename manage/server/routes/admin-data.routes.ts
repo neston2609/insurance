@@ -1,6 +1,10 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
-import { daysUntilExpiry } from "../domain/campaign-contact";
+import {
+  daysUntilExpiry,
+  isValidPhone,
+  normalizeThaiPhone,
+} from "../domain/campaign-contact";
 import {
   createBackup,
   createCustomer,
@@ -45,6 +49,8 @@ adminDataRouter.use((request, response, next) => {
     (request.method === "GET" && request.path === "/policies/all") ||
     (request.method === "GET" &&
       ["/customers/all", "/products/all"].includes(request.path)) ||
+    ((request.method === "GET" || request.method === "POST") &&
+      request.path === "/customers/by-phone") ||
     (request.method === "PATCH" &&
       /^\/customers\/[^/]+\/dnc$/.test(request.path))
   ) {
@@ -119,6 +125,68 @@ adminDataRouter.get(
       (item) => !customerIds.size || customerIds.has(item.customerId),
     );
     response.json({ items, total: items.length });
+  },
+);
+async function sendCustomerByPhone(phone: unknown, response: Response) {
+  response.setHeader("Cache-Control", "no-store");
+  response.vary("Cookie, Authorization");
+
+  if (typeof phone !== "string" || !isValidPhone(phone)) {
+    response
+      .status(400)
+      .json({ message: "A valid Thai mobile phone is required" });
+    return;
+  }
+
+  const normalizedPhone = normalizeThaiPhone(phone);
+  const customer = (await customers.all()).find((item) => {
+    try {
+      return normalizeThaiPhone(item.phone) === normalizedPhone;
+    } catch {
+      return false;
+    }
+  });
+  if (!customer) {
+    response.status(404).json({ message: "Customer not found" });
+    return;
+  }
+
+  const [allProducts, allPolicies] = await Promise.all([
+    products.all(),
+    policies.all(),
+  ]);
+  const productMap = new Map(
+    allProducts.map((product) => [product.productId, product]),
+  );
+  const customerPolicies = allPolicies
+    .filter((policy) => policy.customerId === customer.customerId)
+    .map((policy) => ({
+      ...policy,
+      daysUntilExpiry: daysUntilExpiry(policy.expiryDate),
+      product: productMap.get(policy.productId) ?? null,
+    }));
+
+  response.json({
+    customer,
+    policies: customerPolicies,
+    totalPolicies: customerPolicies.length,
+  });
+}
+
+adminDataRouter.get(
+  "/customers/by-phone",
+  policyReadLimiter,
+  requireManagementAuth,
+  async (request, response) => {
+    await sendCustomerByPhone(request.query.phone, response);
+  },
+);
+adminDataRouter.post(
+  "/customers/by-phone",
+  policyReadLimiter,
+  requireManagementAuth,
+  async (request, response) => {
+    await sendCustomerByPhone(request.body?.phone, response);
   },
 );
 adminDataRouter.get("/customers/:id/360", async (request, response) => {

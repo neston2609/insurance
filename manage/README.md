@@ -1,6 +1,6 @@
 # Insurance Management
 
-API สำหรับดึงข้อมูล Customers, Products และกรมธรรม์ รองรับ Basic Authentication ด้วยบัญชี Management เดียวกับหน้าเว็บ ดูวิธีใช้งานและตัวอย่างใน [คู่มือ Customers API](docs/CUSTOMERS-API.md), [Products API](docs/PRODUCTS-API.md) และ [Policies API](docs/POLICIES-API.md) บันทึกผลการติดต่อลูกค้าได้ที่ `POST /api/public/call-back-results`
+API สำหรับดึงข้อมูล Customers, ค้นหาลูกค้าด้วยเบอร์โทร, Products และกรมธรรม์ รองรับ Basic Authentication ด้วยบัญชี Management เดียวกับหน้าเว็บ ดูวิธีใช้งานและตัวอย่างใน [คู่มือ Customers API](docs/CUSTOMERS-API.md), [Products API](docs/PRODUCTS-API.md) และ [Policies API](docs/POLICIES-API.md) บันทึกผลการติดต่อลูกค้าได้ที่ `POST /api/public/call-back-results`
 
 แอปนี้ติดตั้ง build และรันได้ด้วยตัวเอง ไม่ใช้ package, server, session หรือฐานข้อมูลจากแอปอื่น
 

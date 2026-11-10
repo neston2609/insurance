@@ -2598,6 +2598,18 @@ const managementApiEndpoints: readonly (readonly [
   ],
   [
     "GET",
+    "/api/admin/customers/by-phone?phone=",
+    "Management session or Basic Auth",
+    "Find a customer by Thai mobile number and read all policies with linked product details.",
+  ],
+  [
+    "POST",
+    "/api/admin/customers/by-phone",
+    "Management session or Basic Auth",
+    'Find a customer by phone in a JSON body: { "phone": "+66818376355" }.',
+  ],
+  [
+    "GET",
     "/api/admin/customers/:id",
     "Management session",
     "Read one customer.",
@@ -2797,6 +2809,96 @@ Content-Type: application/json
   ],
   "total": 1
 }`,
+    },
+    "/api/admin/customers/by-phone?phone=": {
+      request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  'https://mfecinsure.demohub24.com/api/admin/customers/by-phone?phone=%2B66818376355'
+
+# These formats resolve to the same Thai mobile number:
+# phone=+66818376355, phone=66818376355, or phone=0818376355`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+
+{
+  "customer": {
+    "customerId": "CUST00001",
+    "firstName": "สมชาย",
+    "lastName": "ตัวอย่าง",
+    "phone": "+66812345678"
+  },
+  "policies": [
+    {
+      "policyId": "POL00001",
+      "policyNumber": "MFEC-MC-2026-00001",
+      "customerId": "CUST00001",
+      "productId": "PROD00006",
+      "effectiveDate": "2026-01-15",
+      "expiryDate": "2026-11-14",
+      "premium": 4250,
+      "vehicle": {
+        "vehicleType": "MOTORCYCLE",
+        "brand": "Honda",
+        "model": "PCX 160",
+        "year": 2024,
+        "licensePlate": "กข 1234",
+        "province": "กรุงเทพมหานคร"
+      },
+      "product": {
+        "productId": "PROD00006",
+        "productName": "Example motorcycle insurance"
+      },
+      "daysUntilExpiry": 0
+    }
+  ],
+  "totalPolicies": 1
+}
+
+# Each policy includes the complete policy fields and full linked product record.
+# Invalid/missing phone: 400. No matching customer: 404. Invalid auth: 401.`,
+    },
+    "/api/admin/customers/by-phone": {
+      request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"phone":"+66818376355"}' \\
+  'https://mfecinsure.demohub24.com/api/admin/customers/by-phone'`,
+      response: `HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+
+{
+  "customer": {
+    "customerId": "CUST00001",
+    "firstName": "สมชาย",
+    "lastName": "ตัวอย่าง",
+    "phone": "+66812345678"
+  },
+  "policies": [
+    {
+      "policyId": "POL00001",
+      "policyNumber": "MFEC-MC-2026-00001",
+      "customerId": "CUST00001",
+      "productId": "PROD00006",
+      "premium": 4250,
+      "vehicle": {
+        "vehicleType": "MOTORCYCLE",
+        "brand": "Honda",
+        "model": "PCX 160",
+        "year": 2024,
+        "licensePlate": "กข 1234",
+        "province": "กรุงเทพมหานคร"
+      },
+      "product": {
+        "productId": "PROD00006",
+        "productName": "Example motorcycle insurance"
+      },
+      "daysUntilExpiry": 0
+    }
+  ],
+  "totalPolicies": 1
+}
+
+# Invalid/missing phone: 400. No matching customer: 404. Invalid auth: 401.`,
     },
     "/api/admin/products/all?productId=": {
       request: `curl -i --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \\
@@ -3583,10 +3685,11 @@ ${JSON.stringify(responseBody, null, 2)}`
           endpoints require a signed-in Management session cookie. For external
           tools, sign in first and retain the returned cookie. The read-only
           <code> /api/admin/policies/all</code> feed also accepts HTTP Basic
-          Auth. The DNC update, complete Customers/Products feeds, and public
-          callback result APIs also accept Basic Auth with Management username
-          and password; the policy renewal endpoint is public and rate limited.
-          Send JSON requests with <code>Content-Type: application/json</code>.
+          Auth. The DNC update, complete Customers/Products feeds, phone lookup,
+          and public callback result APIs also accept Basic Auth with Management
+          username and password; the policy renewal endpoint is public and rate
+          limited. Send JSON requests with
+          <code> Content-Type: application/json</code>.
         </p>
       </section>
       <section className="admin-panel api-manual-panel">

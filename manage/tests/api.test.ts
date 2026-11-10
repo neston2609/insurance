@@ -144,6 +144,99 @@ test(
         });
         assert.equal(invalidAuth.status, 401);
       }
+      const lookupAuth = {
+        Authorization: managementBasicAuth,
+      };
+      assert.equal(
+        (await request("/api/admin/customers/by-phone?phone=0812345678"))
+          .status,
+        401,
+        "phone lookup requires Management authentication",
+      );
+      for (const phone of ["+66812345678", "66812345678", "0812345678"]) {
+        const lookup = await request(
+          `/api/admin/customers/by-phone?phone=${encodeURIComponent(phone)}`,
+          "GET",
+          undefined,
+          undefined,
+          lookupAuth,
+        );
+        assert.equal(lookup.status, 200, `phone format ${phone} is accepted`);
+        assert.equal(lookup.headers.get("cache-control"), "no-store");
+        assert.match(lookup.headers.get("vary") || "", /Authorization/);
+        const result = await lookup.json();
+        assert.equal(result.customer.customerId, "CUST00001");
+        assert.equal(result.customer.firstName, "สมชาย");
+        assert.equal(result.totalPolicies, result.policies.length);
+        assert.ok(result.totalPolicies > 0);
+        assert.ok(
+          result.policies.every(
+            (policy: {
+              customerId: string;
+              policyNumber: string;
+              vehicle: { licensePlate: string };
+              product: { productName: string } | null;
+            }) =>
+              policy.customerId === result.customer.customerId &&
+              Boolean(policy.policyNumber) &&
+              Boolean(policy.vehicle.licensePlate) &&
+              Boolean(policy.product?.productName),
+          ),
+          "each matching policy includes its policy and product details",
+        );
+      }
+      const postLookup = await request(
+        "/api/admin/customers/by-phone",
+        "POST",
+        { phone: "+66812345678" },
+        undefined,
+        { ...lookupAuth, "Content-Type": "application/json" },
+      );
+      assert.equal(postLookup.status, 200);
+      assert.equal((await postLookup.json()).customer.customerId, "CUST00001");
+      const invalidPostLookup = await request(
+        "/api/admin/customers/by-phone",
+        "POST",
+        { phone: "020001111" },
+        undefined,
+        { ...lookupAuth, "Content-Type": "application/json" },
+      );
+      assert.equal(invalidPostLookup.status, 400);
+      for (const url of [
+        "/api/admin/customers/by-phone",
+        "/api/admin/customers/by-phone?phone=020001111",
+        "/api/admin/customers/by-phone?phone=0812345678&phone=0899999999",
+      ]) {
+        const invalidPhone = await request(url, "GET", undefined, undefined, {
+          Authorization: managementBasicAuth,
+        });
+        assert.equal(invalidPhone.status, 400, `${url} is rejected`);
+      }
+      const noMatch = await request(
+        "/api/admin/customers/by-phone?phone=0899999999",
+        "GET",
+        undefined,
+        undefined,
+        lookupAuth,
+      );
+      assert.equal(noMatch.status, 404);
+      assert.equal(
+        (
+          await request(
+            "/api/admin/customers/by-phone?phone=0812345678",
+            "GET",
+            undefined,
+            undefined,
+            {
+              Authorization:
+                "Basic " +
+                Buffer.from("admin:WrongPassword123!").toString("base64"),
+            },
+          )
+        ).status,
+        401,
+        "phone lookup rejects incorrect Management credentials",
+      );
       const basicCustomers = await (
         await request("/api/admin/customers/all", "GET", undefined, undefined, {
           Authorization: managementBasicAuth,
