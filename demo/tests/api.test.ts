@@ -146,6 +146,16 @@ test(
         assert.equal(page.status, 200, url);
         assert.match(await page.text(), /<div id="root">/);
       }
+      const customerFacingHtml = await (await request("/")).text();
+      assert.match(
+        customerFacingHtml,
+        /https:\/\/apps\.apse1\.pure\.cloud\/genesys-bootstrap\/genesys\.min\.js/,
+      );
+      assert.match(
+        customerFacingHtml,
+        /deploymentId:\s*"e5fbe0dc-a5c3-48a9-be1c-9efd88ab789f"/,
+      );
+      assert.match(customerFacingHtml, /environment:\s*"prod-apse1"/);
     } finally {
       await stop();
     }
