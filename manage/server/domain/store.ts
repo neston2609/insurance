@@ -18,6 +18,7 @@ import type {
   Policy,
   Product,
 } from "./types";
+import type { GenesysCallbackAuditRecord } from "../services/genesys-callback.service";
 
 export const customers = new JsonRepository<Customer>(
   "customers.json",
@@ -51,6 +52,11 @@ export const auditLog = new JsonRepository<AuditRecord>(
   "audit-log.json",
   () => [],
 );
+export const genesysCallbackAudit =
+  new JsonRepository<GenesysCallbackAuditRecord>(
+    "genesys-callback-audit.json",
+    () => [],
+  );
 export const businessRepositories = [
   customers,
   products,
@@ -60,6 +66,7 @@ export const businessRepositories = [
   agentCallbacks,
   callBackResults,
   auditLog,
+  genesysCallbackAudit,
 ] as const;
 
 export async function initializeBusinessData(): Promise<void> {

@@ -11,6 +11,7 @@ import { publicRouter } from "./routes/public.routes";
 import { initializeBusinessData } from "./domain/store";
 import { FileSessionStore } from "./middleware/file-session-store";
 import { adminCredentials } from "./services/admin-credentials.service";
+import { validateGenesysCallbackStartupConfiguration } from "./services/genesys-callback.service";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -129,6 +130,7 @@ app.use(
 
 await adminCredentials.initialize();
 await initializeBusinessData();
+validateGenesysCallbackStartupConfiguration();
 
 app.listen(port, host, () => {
   console.log(`manage listening on ${host}:${port}`);

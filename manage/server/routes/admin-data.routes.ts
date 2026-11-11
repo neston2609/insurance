@@ -34,6 +34,7 @@ import {
   campaigns,
   callBackResults,
   customers,
+  genesysCallbackAudit,
   policies,
   products,
 } from "../domain/store";
@@ -42,6 +43,11 @@ import type { Customer } from "../domain/types";
 import { subscribeToPolicyRenewals } from "../domain/policy-renewal-events";
 import { listAllPolicies } from "../services/policy-list.service";
 import { requireManagementAuth } from "../middleware/require-management-auth";
+import {
+  CallbackServiceError,
+  createGenesysCallbackScheduler,
+  readGenesysCallbackConfig,
+} from "../services/genesys-callback.service";
 
 export const adminDataRouter = Router();
 adminDataRouter.use((request, response, next) => {
@@ -51,6 +57,8 @@ adminDataRouter.use((request, response, next) => {
       ["/customers/all", "/products/all"].includes(request.path)) ||
     ((request.method === "GET" || request.method === "POST") &&
       request.path === "/customers/by-phone") ||
+    (request.method === "POST" &&
+      request.path === "/genesys/schedule-callback") ||
     (request.method === "PATCH" &&
       /^\/customers\/[^/]+\/dnc$/.test(request.path))
   ) {
@@ -67,6 +75,55 @@ const policyReadLimiter = rateLimit({
   legacyHeaders: false,
   message: { message: "Too many API requests. Please try again later." },
 });
+
+let genesysCallbackScheduler:
+  ReturnType<typeof createGenesysCallbackScheduler> | undefined;
+
+function getGenesysCallbackScheduler() {
+  genesysCallbackScheduler ??= createGenesysCallbackScheduler({
+    config: readGenesysCallbackConfig(),
+    repository: genesysCallbackAudit,
+  });
+  return genesysCallbackScheduler;
+}
+
+adminDataRouter.post(
+  "/genesys/schedule-callback",
+  requireManagementAuth,
+  async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.vary("Cookie, Authorization");
+    try {
+      response.json(await getGenesysCallbackScheduler().schedule(request.body));
+    } catch (error) {
+      if (error instanceof CallbackServiceError) {
+        const status =
+          error.code === "INVALID_REQUEST" ||
+          error.code === "INVALID_PHONE" ||
+          error.code === "INVALID_CALLBACK_TIME"
+            ? 400
+            : error.code === "DUPLICATE_REQUEST"
+              ? 409
+              : error.code === "GENESYS_AUTH_ERROR" ||
+                  error.code === "GENESYS_CALLBACK_ERROR"
+                ? 502
+                : 500;
+        response.status(status).json({
+          callbackCreated: false,
+          error: error.code,
+          message: error.message,
+        });
+        return;
+      }
+      console.error("Callback scheduling failed (internal error)");
+      response.status(500).json({
+        callbackCreated: false,
+        error: "INTERNAL_ERROR",
+        message: "Unable to schedule callback",
+      });
+    }
+  },
+);
 
 const string = (value: unknown) => (typeof value === "string" ? value : "");
 const queryValues = (value: unknown): string[] =>

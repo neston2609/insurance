@@ -98,6 +98,12 @@ test(
       assert.equal((await request("/")).headers.get("location"), "/manage");
       assert.equal((await request("/genesys")).status, 404);
       assert.equal((await request("/api/admin/customers")).status, 401);
+      assert.equal(
+        (await request("/api/admin/genesys/schedule-callback", "POST", {}))
+          .status,
+        401,
+        "callback endpoint requires existing Management authentication",
+      );
       assert.equal((await request("/api/admin/policies/all")).status, 401);
       assert.equal((await request("/api/admin/customers/all")).status, 401);
       assert.equal((await request("/api/admin/products/all")).status, 401);
@@ -147,6 +153,19 @@ test(
       const lookupAuth = {
         Authorization: managementBasicAuth,
       };
+      const invalidCallback = await request(
+        "/api/admin/genesys/schedule-callback",
+        "POST",
+        {},
+        undefined,
+        { ...lookupAuth, "Content-Type": "application/json" },
+      );
+      assert.equal(invalidCallback.status, 400);
+      assert.deepEqual(await invalidCallback.json(), {
+        callbackCreated: false,
+        error: "INVALID_REQUEST",
+        message: "callbackDate is required and must be a string",
+      });
       assert.equal(
         (await request("/api/admin/customers/by-phone?phone=0812345678"))
           .status,
