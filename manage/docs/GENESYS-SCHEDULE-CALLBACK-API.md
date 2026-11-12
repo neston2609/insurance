@@ -12,7 +12,7 @@ Use the existing Management username and password. The API also accepts an authe
 
 ## Request
 
-All listed fields are required. Text fields may be empty if they do not apply. `timezone` must be `Asia/Bangkok`.
+Scheduling fields, `callbackNumber`, `timezone`, and AVA text fields are required. `callbackUserName` and `sourceChannel` are optional; text fields may be empty if they do not apply. `timezone` must be `Asia/Bangkok`.
 
 ```json
 {
@@ -27,7 +27,8 @@ All listed fields are required. Text fields may be empty if they do not apply. `
   "customerIntent": "RENEWAL_REQUEST",
   "productInterest": "Accident Usage Protection",
   "customerQuestion": "ต้องการสอบถามส่วนลดต่ออายุ",
-  "conversationSummary": "ลูกค้าสนใจต่ออายุประกันรถ BYD Atto 3 และต้องการสอบถามส่วนลด"
+  "conversationSummary": "ลูกค้าสนใจต่ออายุประกันรถ BYD Atto 3 และต้องการสอบถามส่วนลด",
+  "sourceChannel": "DIGITAL"
 }
 ```
 
@@ -37,7 +38,7 @@ Supported schedule types:
 - `DAY_OFFSET_TIME`: Bangkok current date plus `dayOffset` (0–365), combined with `callbackTime` in `HH:mm`.
 - `ABSOLUTE_DATE_TIME`: `callbackDate` (`YYYY-MM-DD`) and `callbackTime` (`HH:mm`), interpreted in Bangkok time.
 
-The service resolves wall-clock date/time using the IANA `Asia/Bangkok` zone, rejects past times, and sends UTC ISO-8601 to Genesys. Thai mobile numbers are normalized to E.164. Thai AVA context is sent using the Genesys callback `data` map with `AVA_INTENT`, `AVA_PRODUCT_INTEREST`, `AVA_CUSTOMER_QUESTION`, and `AVA_SUMMARY` keys.
+The service resolves wall-clock date/time using the IANA `Asia/Bangkok` zone, rejects past times, and sends UTC ISO-8601 to Genesys. Thai mobile numbers are normalized to E.164 for dialing, while the callback `data` map retains the human-readable Thai number. Participant context is sent using the existing Genesys callback `data` map with exactly these keys: `AVA_CUSTOMER_NAME`, `AVA_CALLBACK_PHONE`, `AVA_INTENT`, `AVA_PRODUCT_INTEREST`, `AVA_CUSTOMER_QUESTION`, `AVA_SUMMARY`, `AVA_CALLBACK_TIME_TH`, and `AVA_SOURCE_CHANNEL`. `callbackUserName` values blank or equal to `Customer` produce an empty `AVA_CUSTOMER_NAME`; the Genesys callback display name still falls back to `Customer`. Missing or blank `sourceChannel` becomes `UNKNOWN`. The Thai callback time is the same calculated value returned as `scheduledTimeThai`.
 
 ## Success
 
@@ -57,7 +58,7 @@ An identical request within the configured duplicate-protection window returns t
 
 ## Failures
 
-Invalid request/phone/time returns HTTP `400`, with `callbackCreated: false` and a safe error code (`INVALID_REQUEST`, `INVALID_PHONE`, or `INVALID_CALLBACK_TIME`). Genesys OAuth/API failures return HTTP `502` and safe codes (`GENESYS_AUTH_ERROR` or `GENESYS_CALLBACK_ERROR`). An in-flight duplicate request returns HTTP `409` (`DUPLICATE_REQUEST`).
+Invalid request/phone/time returns HTTP `400`, with `callbackCreated: false` and a safe error code (`INVALID_REQUEST`, `INVALID_PHONE`, or `INVALID_CALLBACK_TIME`). An empty callback number returns `INVALID_PHONE` / `Callback phone number is required` before making an OAuth request. Genesys OAuth/API failures return HTTP `502` and safe codes (`GENESYS_AUTH_ERROR` or `GENESYS_CALLBACK_ERROR`). An in-flight duplicate request returns HTTP `409` (`DUPLICATE_REQUEST`).
 
 ## Server configuration
 

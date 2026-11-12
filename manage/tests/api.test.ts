@@ -166,6 +166,31 @@ test(
         error: "INVALID_REQUEST",
         message: "callbackDate is required and must be a string",
       });
+      const emptyCallbackPhone = await request(
+        "/api/admin/genesys/schedule-callback",
+        "POST",
+        {
+          scheduleType: "RELATIVE_MINUTES",
+          delayMinutes: 2,
+          dayOffset: 0,
+          callbackDate: "",
+          callbackTime: "",
+          timezone: "Asia/Bangkok",
+          callbackNumber: " ",
+          customerIntent: "",
+          productInterest: "",
+          customerQuestion: "",
+          conversationSummary: "",
+        },
+        undefined,
+        { ...lookupAuth, "Content-Type": "application/json" },
+      );
+      assert.equal(emptyCallbackPhone.status, 400);
+      assert.deepEqual(await emptyCallbackPhone.json(), {
+        callbackCreated: false,
+        error: "INVALID_PHONE",
+        message: "Callback phone number is required",
+      });
       assert.equal(
         (await request("/api/admin/customers/by-phone?phone=0812345678"))
           .status,

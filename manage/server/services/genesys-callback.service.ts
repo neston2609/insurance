@@ -2,10 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 
 export const BANGKOK_TIMEZONE = "Asia/Bangkok";
 export const GENESYS_CALLBACK_CONTEXT_KEYS = [
+  "AVA_CUSTOMER_NAME",
+  "AVA_CALLBACK_PHONE",
   "AVA_INTENT",
   "AVA_PRODUCT_INTEREST",
   "AVA_CUSTOMER_QUESTION",
   "AVA_SUMMARY",
+  "AVA_CALLBACK_TIME_TH",
+  "AVA_SOURCE_CHANNEL",
 ] as const;
 
 export type CallbackScheduleType =
@@ -19,11 +23,12 @@ export interface ScheduleCallbackInput {
   callbackTime: string;
   timezone: string;
   callbackNumber: string;
-  callbackUserName: string;
+  callbackUserName?: string | null;
   customerIntent: string;
   productInterest: string;
   customerQuestion: string;
   conversationSummary: string;
+  sourceChannel?: string | null;
 }
 
 export interface ResolvedCallbackTime {
@@ -38,15 +43,19 @@ export interface GenesysCallbackAuditRecord {
   requestFingerprint: string;
   callbackId: string;
   callbackNumber: string;
+  callbackNumberE164?: string;
   scheduleType: CallbackScheduleType;
   requestedTimezone: string;
   scheduledTimeLocal: string;
   scheduledTimeUtc: string;
+  scheduledTimeThai: string;
   callbackUserName: string;
+  customerName: string;
   customerIntent: string;
   productInterest: string;
   customerQuestion: string;
   conversationSummary: string;
+  sourceChannel: string;
   queueId: string;
   status: "PENDING" | "SCHEDULED" | "FAILED";
   createdAt: string;
@@ -118,6 +127,7 @@ const textLimits = {
   productInterest: 240,
   customerQuestion: 600,
   conversationSummary: 1200,
+  sourceChannel: 40,
 } as const;
 
 function invalid(message: string): never {
@@ -137,8 +147,6 @@ export function validateScheduleCallbackInput(
     "callbackDate",
     "callbackTime",
     "timezone",
-    "callbackNumber",
-    "callbackUserName",
     "customerIntent",
     "productInterest",
     "customerQuestion",
@@ -148,6 +156,19 @@ export function validateScheduleCallbackInput(
     if (typeof value[field] !== "string")
       invalid(`${field} is required and must be a string`);
   }
+
+  if (
+    value.callbackUserName !== undefined &&
+    value.callbackUserName !== null &&
+    typeof value.callbackUserName !== "string"
+  )
+    invalid("callbackUserName must be a string when provided");
+  if (
+    value.sourceChannel !== undefined &&
+    value.sourceChannel !== null &&
+    typeof value.sourceChannel !== "string"
+  )
+    invalid("sourceChannel must be a string when provided");
 
   const scheduleType = value.scheduleType;
   if (
@@ -171,15 +192,35 @@ export function validateScheduleCallbackInput(
   if (value.timezone !== BANGKOK_TIMEZONE)
     invalid(`timezone must be ${BANGKOK_TIMEZONE}`);
   if (typeof value.callbackNumber !== "string" || !value.callbackNumber.trim())
-    invalid("callbackNumber is required");
+    throw new CallbackServiceError(
+      "INVALID_PHONE",
+      "Callback phone number is required",
+    );
 
   for (const [field, limit] of Object.entries(textLimits)) {
     const text = value[field];
+    if (field === "callbackUserName" || field === "sourceChannel") {
+      if (text === undefined || text === null) continue;
+    }
     if (typeof text !== "string" || text.length > limit)
       invalid(`${field} must be a string no longer than ${limit} characters`);
   }
 
-  return value as unknown as ScheduleCallbackInput;
+  const sourceChannel =
+    typeof value.sourceChannel === "string"
+      ? value.sourceChannel.trim().toUpperCase()
+      : "";
+  if (sourceChannel && !/^[A-Z][A-Z0-9_-]{0,39}$/.test(sourceChannel))
+    invalid(
+      "sourceChannel must contain only letters, numbers, underscores, or hyphens",
+    );
+
+  return {
+    ...value,
+    callbackUserName:
+      typeof value.callbackUserName === "string" ? value.callbackUserName : "",
+    sourceChannel: sourceChannel || "UNKNOWN",
+  } as unknown as ScheduleCallbackInput;
 }
 
 export function normalizeCallbackPhone(value: string): string {
@@ -191,6 +232,18 @@ export function normalizeCallbackPhone(value: string): string {
     "INVALID_PHONE",
     "Invalid callback phone number",
   );
+}
+
+function callbackPhoneForDisplay(value: string): string {
+  const compact = value.trim().replace(/[\s().-]/g, "");
+  if (/^\+66[689]\d{8}$/.test(compact)) return `0${compact.slice(3)}`;
+  if (/^66[689]\d{8}$/.test(compact)) return `0${compact.slice(2)}`;
+  return compact;
+}
+
+function actualCustomerName(value: string | null | undefined): string {
+  const name = value?.trim() ?? "";
+  return name && name.toLocaleLowerCase() !== "customer" ? name : "";
 }
 
 function zonedParts(date: Date, timeZone: string) {
@@ -632,13 +685,20 @@ export function createGenesysCallbackScheduler(options: {
     const input = validateScheduleCallbackInput(value);
     const requestTime = now();
     const phone = normalizeCallbackPhone(input.callbackNumber);
+    const callbackPhoneDisplay = callbackPhoneForDisplay(input.callbackNumber);
     const scheduled = resolveCallbackTime(input, requestTime);
-    const callbackUserName = input.callbackUserName.trim() || "Customer";
+    const customerName = actualCustomerName(input.callbackUserName);
+    const callbackUserName = input.callbackUserName?.trim() || "Customer";
+    const sourceChannel = input.sourceChannel || "UNKNOWN";
     const context = {
+      AVA_CUSTOMER_NAME: customerName,
+      AVA_CALLBACK_PHONE: callbackPhoneDisplay,
       AVA_INTENT: input.customerIntent.trim(),
       AVA_PRODUCT_INTEREST: input.productInterest.trim(),
       AVA_CUSTOMER_QUESTION: input.customerQuestion.trim(),
       AVA_SUMMARY: input.conversationSummary.trim(),
+      AVA_CALLBACK_TIME_TH: scheduled.scheduledTimeThai,
+      AVA_SOURCE_CHANNEL: sourceChannel,
     };
     const loggerFields = `scheduleType=${input.scheduleType} phone=${maskCallbackPhone(phone)} local=${scheduled.scheduledTimeLocal} utc=${scheduled.scheduledTimeUtc}`;
     logger.info(`Callback schedule request received (${loggerFields})`);
@@ -665,16 +725,20 @@ export function createGenesysCallbackScheduler(options: {
       recordId: randomUUID(),
       requestFingerprint,
       callbackId: "",
-      callbackNumber: phone,
       scheduleType: input.scheduleType,
       requestedTimezone: input.timezone,
       scheduledTimeLocal: scheduled.scheduledTimeLocal,
       scheduledTimeUtc: scheduled.scheduledTimeUtc,
+      scheduledTimeThai: scheduled.scheduledTimeThai,
       callbackUserName,
+      customerName,
       customerIntent: context.AVA_INTENT,
       productInterest: context.AVA_PRODUCT_INTEREST,
       customerQuestion: context.AVA_CUSTOMER_QUESTION,
       conversationSummary: context.AVA_SUMMARY,
+      callbackNumber: callbackPhoneDisplay,
+      callbackNumberE164: phone,
+      sourceChannel,
       queueId: config.queueId,
       status: "PENDING" as const,
       createdAt: reserveTime,
@@ -690,7 +754,7 @@ export function createGenesysCallbackScheduler(options: {
           (item.requestFingerprint === requestFingerprint ||
             (input.scheduleType === "RELATIVE_MINUTES" &&
               item.scheduleType === "RELATIVE_MINUTES" &&
-              item.callbackNumber === phone &&
+              (item.callbackNumberE164 ?? item.callbackNumber) === phone &&
               item.customerIntent === context.AVA_INTENT &&
               item.conversationSummary === context.AVA_SUMMARY &&
               Math.abs(
@@ -712,9 +776,9 @@ export function createGenesysCallbackScheduler(options: {
           callbackId: existing.callbackId || null,
           callbackNumber: input.callbackNumber,
           scheduledTimeUtc: existing.scheduledTimeUtc,
-          scheduledTimeThai: formatThaiCallbackTime(
-            new Date(existing.scheduledTimeUtc),
-          ),
+          scheduledTimeThai:
+            existing.scheduledTimeThai ||
+            formatThaiCallbackTime(new Date(existing.scheduledTimeUtc)),
         };
       }
       throw new CallbackServiceError(
@@ -776,7 +840,7 @@ export function createGenesysCallbackScheduler(options: {
       );
     }
     logger.info(
-      `Genesys callback creation succeeded${callbackId ? ` callbackId=${callbackId}` : " without a callback ID"}`,
+      `Callback scheduled callbackId=${callbackId} scheduledTimeUtc=${scheduled.scheduledTimeUtc} sourceChannel=${sourceChannel} hasCustomerName=${Boolean(customerName)} hasIntent=${Boolean(context.AVA_INTENT)} hasProductInterest=${Boolean(context.AVA_PRODUCT_INTEREST)}`,
     );
     return {
       callbackCreated: true as const,

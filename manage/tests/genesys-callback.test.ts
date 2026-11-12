@@ -222,9 +222,10 @@ test("uses AP Southeast region hosts and validates callback configuration", () =
   );
 });
 
-test("creates callback with configured queue and AVA context, preserving Thai UTF-8", async () => {
+test("creates callback with complete DIGITAL AVA context and preserves Thai UTF-8", async () => {
   const repository = memoryRepository();
   let sent: Record<string, unknown> | undefined;
+  const logMessages: string[] = [];
   const mock = makeFetchMock((payload) => {
     sent = payload;
     return Response.json({ conversation: { id: "genesys-conversation-123" } });
@@ -234,28 +235,152 @@ test("creates callback with configured queue and AVA context, preserving Thai UT
     repository,
     fetchImpl: mock.fetchMock,
     now: () => new Date("2026-11-11T07:00:00.000Z"),
-    logger: { info() {}, warn() {}, error() {} },
+    logger: {
+      info(message) {
+        logMessages.push(message);
+      },
+      warn() {},
+      error() {},
+    },
   });
-  const result = await scheduler.schedule(validInput());
+  const result = await scheduler.schedule(
+    validInput({
+      sourceChannel: "DIGITAL",
+      customerIntent: "Purchase Insurance",
+      productInterest: "EV Drive Care",
+      customerQuestion: "ต้องการซื้อ EV Drive Care และให้เจ้าหน้าที่ติดต่อกลับ",
+      conversationSummary:
+        "ลูกค้าสนใจซื้อ EV Drive Care และต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อดำเนินการซื้อ",
+    }),
+  );
   assert.equal(result.callbackCreated, true);
   assert.equal(result.callbackId, "genesys-conversation-123");
   assert.equal(result.scheduledTimeUtc, "2026-11-11T07:10:00.000Z");
+  assert.equal(result.scheduledTimeThai, "11 พฤศจิกายน 2569 เวลา 14:10 น.");
   assert.equal(sent?.queueId, "configured-mfec-queue");
   assert.equal("routingData" in (sent ?? {}), false);
   assert.deepEqual(sent?.callbackNumbers, ["+66652936493"]);
   assert.deepEqual(sent?.data, {
-    AVA_INTENT: "RENEWAL_REQUEST",
-    AVA_PRODUCT_INTEREST: "Accident Usage Protection",
-    AVA_CUSTOMER_QUESTION: "ต้องการสอบถามส่วนลดต่ออายุ",
-    AVA_SUMMARY: "ลูกค้าสนใจต่ออายุประกันรถ BYD Atto 3",
+    AVA_CUSTOMER_NAME: "สุวัจชัย รสิกวรรณ",
+    AVA_CALLBACK_PHONE: "0652936493",
+    AVA_INTENT: "Purchase Insurance",
+    AVA_PRODUCT_INTEREST: "EV Drive Care",
+    AVA_CUSTOMER_QUESTION:
+      "ต้องการซื้อ EV Drive Care และให้เจ้าหน้าที่ติดต่อกลับ",
+    AVA_SUMMARY:
+      "ลูกค้าสนใจซื้อ EV Drive Care และต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อดำเนินการซื้อ",
+    AVA_CALLBACK_TIME_TH: result.scheduledTimeThai,
+    AVA_SOURCE_CHANNEL: "DIGITAL",
   });
   assert.equal(sent?.callbackUserName, "สุวัจชัย รสิกวรรณ");
   assert.equal(repository.records[0].callbackId, "genesys-conversation-123");
   assert.equal(repository.records[0].status, "SCHEDULED");
+  assert.equal(repository.records[0].customerName, "สุวัจชัย รสิกวรรณ");
+  assert.equal(repository.records[0].callbackNumber, "0652936493");
+  assert.equal(repository.records[0].callbackNumberE164, "+66652936493");
+  assert.equal(repository.records[0].customerIntent, "Purchase Insurance");
+  assert.equal(repository.records[0].productInterest, "EV Drive Care");
+  assert.equal(
+    repository.records[0].customerQuestion,
+    "ต้องการซื้อ EV Drive Care และให้เจ้าหน้าที่ติดต่อกลับ",
+  );
+  assert.equal(
+    repository.records[0].conversationSummary,
+    "ลูกค้าสนใจซื้อ EV Drive Care และต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อดำเนินการซื้อ",
+  );
+  assert.equal(
+    repository.records[0].scheduledTimeThai,
+    result.scheduledTimeThai,
+  );
+  assert.equal(repository.records[0].sourceChannel, "DIGITAL");
   assert.equal(
     repository.records[0].scheduledTimeLocal,
     "2026-11-11T14:10:00+07:00",
   );
+  assert.ok(
+    logMessages.some(
+      (message) =>
+        message.includes("Callback scheduled") &&
+        message.includes("callbackId=genesys-conversation-123") &&
+        message.includes("scheduledTimeUtc=2026-11-11T07:10:00.000Z") &&
+        message.includes("sourceChannel=DIGITAL") &&
+        message.includes("hasCustomerName=true") &&
+        message.includes("hasIntent=true") &&
+        message.includes("hasProductInterest=true"),
+    ),
+  );
+});
+
+test("omitted or generic customer name is blank participant data; source defaults UNKNOWN", async () => {
+  for (const callbackUserName of [undefined, "Customer", " customer ", ""]) {
+    let sent: Record<string, unknown> | undefined;
+    const mock = makeFetchMock((payload) => {
+      sent = payload;
+      return Response.json({ conversation: { id: "unknown-customer" } });
+    });
+    const scheduler = createGenesysCallbackScheduler({
+      config,
+      repository: memoryRepository(),
+      fetchImpl: mock.fetchMock,
+      now: () => new Date("2026-11-11T07:00:00.000Z"),
+      logger: { info() {}, warn() {}, error() {} },
+    });
+    await scheduler.schedule(validInput({ callbackUserName }));
+    assert.equal((sent?.data as Record<string, unknown>).AVA_CUSTOMER_NAME, "");
+    assert.equal(
+      (sent?.data as Record<string, unknown>).AVA_SOURCE_CHANNEL,
+      "UNKNOWN",
+    );
+    assert.equal(
+      sent?.callbackUserName,
+      callbackUserName?.trim() || "Customer",
+    );
+  }
+});
+
+test("keeps a Thai display phone when input is already E.164", async () => {
+  let sent: Record<string, unknown> | undefined;
+  const scheduler = createGenesysCallbackScheduler({
+    config,
+    repository: memoryRepository(),
+    fetchImpl: makeFetchMock((payload) => {
+      sent = payload;
+      return Response.json({ conversation: { id: "e164-callback" } });
+    }).fetchMock,
+    now: () => new Date("2026-11-11T07:00:00.000Z"),
+    logger: { info() {}, warn() {}, error() {} },
+  });
+  await scheduler.schedule(validInput({ callbackNumber: "+66652936493" }));
+  assert.deepEqual(sent?.callbackNumbers, ["+66652936493"]);
+  assert.equal(
+    (sent?.data as Record<string, unknown>).AVA_CALLBACK_PHONE,
+    "0652936493",
+  );
+});
+
+test("rejects an empty callback phone before OAuth or Genesys callback calls", async () => {
+  const repository = memoryRepository();
+  const mock = makeFetchMock(() =>
+    Response.json({ conversation: { id: "must-not-be-created" } }),
+  );
+  const scheduler = createGenesysCallbackScheduler({
+    config,
+    repository,
+    fetchImpl: mock.fetchMock,
+    now: () => new Date("2026-11-11T07:00:00.000Z"),
+    logger: { info() {}, warn() {}, error() {} },
+  });
+  await assert.rejects(
+    scheduler.schedule(validInput({ callbackNumber: "  " })),
+    (error: unknown) => {
+      assert.ok(error instanceof CallbackServiceError);
+      assert.equal(error.code, "INVALID_PHONE");
+      assert.equal(error.message, "Callback phone number is required");
+      return true;
+    },
+  );
+  assert.deepEqual(mock.counts(), { tokenCalls: 0, callbackCalls: 0 });
+  assert.equal(repository.records.length, 0);
 });
 
 test("caches OAuth token and reuses the scheduled callback for duplicate requests", async () => {
