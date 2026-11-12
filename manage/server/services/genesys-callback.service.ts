@@ -700,6 +700,34 @@ export function createGenesysCallbackScheduler(options: {
       AVA_CALLBACK_TIME_TH: scheduled.scheduledTimeThai,
       AVA_SOURCE_CHANNEL: sourceChannel,
     };
+    const conversationDetails: Record<string, string> = {};
+    const addConversationDetail = (
+      label: string,
+      displayType: "identifier" | "enum" | "tag" | "longtext" | "text",
+      value: string,
+    ) => {
+      if (value)
+        conversationDetails[`conversationDetails.participantData.${label}`] =
+          `${displayType}:${value}`;
+    };
+    addConversationDetail("Customer Name", "identifier", customerName);
+    addConversationDetail("Callback Phone", "identifier", callbackPhoneDisplay);
+    addConversationDetail("Intent", "enum", context.AVA_INTENT);
+    addConversationDetail(
+      "Product Interest",
+      "tag",
+      context.AVA_PRODUCT_INTEREST.replace(/\s*,\s*/g, ","),
+    );
+    addConversationDetail(
+      "Customer Request",
+      "longtext",
+      context.AVA_CUSTOMER_QUESTION,
+    );
+    addConversationDetail("AVA Summary", "longtext", context.AVA_SUMMARY);
+    addConversationDetail("Callback Time", "text", scheduled.scheduledTimeThai);
+    if (sourceChannel !== "UNKNOWN")
+      addConversationDetail("Source Channel", "enum", sourceChannel);
+    Object.assign(context, conversationDetails);
     const loggerFields = `scheduleType=${input.scheduleType} phone=${maskCallbackPhone(phone)} local=${scheduled.scheduledTimeLocal} utc=${scheduled.scheduledTimeUtc}`;
     logger.info(`Callback schedule request received (${loggerFields})`);
     const config = options.config;
@@ -840,7 +868,7 @@ export function createGenesysCallbackScheduler(options: {
       );
     }
     logger.info(
-      `Callback scheduled callbackId=${callbackId} scheduledTimeUtc=${scheduled.scheduledTimeUtc} sourceChannel=${sourceChannel} hasCustomerName=${Boolean(customerName)} hasIntent=${Boolean(context.AVA_INTENT)} hasProductInterest=${Boolean(context.AVA_PRODUCT_INTEREST)}`,
+      `Callback scheduled callbackId=${callbackId} scheduledTimeUtc=${scheduled.scheduledTimeUtc} sourceChannel=${sourceChannel} conversationDetails=${Object.keys(conversationDetails).length > 0} hasCustomerName=${Boolean(customerName)} hasIntent=${Boolean(context.AVA_INTENT)} hasProductInterest=${Boolean(context.AVA_PRODUCT_INTEREST)}`,
     );
     return {
       callbackCreated: true as const,

@@ -40,6 +40,8 @@ Supported schedule types:
 
 The service resolves wall-clock date/time using the IANA `Asia/Bangkok` zone, rejects past times, and sends UTC ISO-8601 to Genesys. Thai mobile numbers are normalized to E.164 for dialing, while the callback `data` map retains the human-readable Thai number. Participant context is sent using the existing Genesys callback `data` map with exactly these keys: `AVA_CUSTOMER_NAME`, `AVA_CALLBACK_PHONE`, `AVA_INTENT`, `AVA_PRODUCT_INTEREST`, `AVA_CUSTOMER_QUESTION`, `AVA_SUMMARY`, `AVA_CALLBACK_TIME_TH`, and `AVA_SOURCE_CHANNEL`. `callbackUserName` values blank or equal to `Customer` produce an empty `AVA_CUSTOMER_NAME`; the Genesys callback display name still falls back to `Customer`. Missing or blank `sourceChannel` becomes `UNKNOWN`. The Thai callback time is the same calculated value returned as `scheduledTimeThai`.
 
+The same `data` map also includes non-empty Genesys Conversation Details fields using `conversationDetails.participantData.<Display Label>` keys. Values use the Genesys display prefixes `identifier:`, `enum:`, `tag:`, `longtext:`, and `text:`. Labels are `Customer Name`, `Callback Phone`, `Intent`, `Product Interest`, `Customer Request`, `AVA Summary`, `Callback Time`, and `Source Channel`. Missing customer name and `UNKNOWN` source channel are omitted from Conversation Details; the existing `AVA_*` participant fields remain present.
+
 ## Success
 
 HTTP `200`:

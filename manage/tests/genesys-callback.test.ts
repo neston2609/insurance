@@ -222,7 +222,7 @@ test("uses AP Southeast region hosts and validates callback configuration", () =
   );
 });
 
-test("creates callback with complete DIGITAL AVA context and preserves Thai UTF-8", async () => {
+test("creates one callback with AVA and Conversation Details attributes", async () => {
   const repository = memoryRepository();
   let sent: Record<string, unknown> | undefined;
   const logMessages: string[] = [];
@@ -245,12 +245,13 @@ test("creates callback with complete DIGITAL AVA context and preserves Thai UTF-
   });
   const result = await scheduler.schedule(
     validInput({
-      sourceChannel: "DIGITAL",
-      customerIntent: "Purchase Insurance",
-      productInterest: "EV Drive Care",
-      customerQuestion: "ต้องการซื้อ EV Drive Care และให้เจ้าหน้าที่ติดต่อกลับ",
+      sourceChannel: "VOICE",
+      customerIntent: "POLICY_COVERAGE",
+      productInterest: "Accident Usage Protection, Motor Smart 3+",
+      customerQuestion:
+        "ต้องการสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ทั้ง 2 ฉบับ",
       conversationSummary:
-        "ลูกค้าสนใจซื้อ EV Drive Care และต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อดำเนินการซื้อ",
+        "ลูกค้าต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ Accident Usage Protection และ Motor Smart 3+",
     }),
   );
   assert.equal(result.callbackCreated, true);
@@ -263,14 +264,27 @@ test("creates callback with complete DIGITAL AVA context and preserves Thai UTF-
   assert.deepEqual(sent?.data, {
     AVA_CUSTOMER_NAME: "สุวัจชัย รสิกวรรณ",
     AVA_CALLBACK_PHONE: "0652936493",
-    AVA_INTENT: "Purchase Insurance",
-    AVA_PRODUCT_INTEREST: "EV Drive Care",
+    AVA_INTENT: "POLICY_COVERAGE",
+    AVA_PRODUCT_INTEREST: "Accident Usage Protection, Motor Smart 3+",
     AVA_CUSTOMER_QUESTION:
-      "ต้องการซื้อ EV Drive Care และให้เจ้าหน้าที่ติดต่อกลับ",
+      "ต้องการสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ทั้ง 2 ฉบับ",
     AVA_SUMMARY:
-      "ลูกค้าสนใจซื้อ EV Drive Care และต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อดำเนินการซื้อ",
+      "ลูกค้าต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ Accident Usage Protection และ Motor Smart 3+",
     AVA_CALLBACK_TIME_TH: result.scheduledTimeThai,
-    AVA_SOURCE_CHANNEL: "DIGITAL",
+    AVA_SOURCE_CHANNEL: "VOICE",
+    "conversationDetails.participantData.Customer Name":
+      "identifier:สุวัจชัย รสิกวรรณ",
+    "conversationDetails.participantData.Callback Phone":
+      "identifier:0652936493",
+    "conversationDetails.participantData.Intent": "enum:POLICY_COVERAGE",
+    "conversationDetails.participantData.Product Interest":
+      "tag:Accident Usage Protection,Motor Smart 3+",
+    "conversationDetails.participantData.Customer Request":
+      "longtext:ต้องการสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ทั้ง 2 ฉบับ",
+    "conversationDetails.participantData.AVA Summary":
+      "longtext:ลูกค้าต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ Accident Usage Protection และ Motor Smart 3+",
+    "conversationDetails.participantData.Callback Time": `text:${result.scheduledTimeThai}`,
+    "conversationDetails.participantData.Source Channel": "enum:VOICE",
   });
   assert.equal(sent?.callbackUserName, "สุวัจชัย รสิกวรรณ");
   assert.equal(repository.records[0].callbackId, "genesys-conversation-123");
@@ -278,21 +292,24 @@ test("creates callback with complete DIGITAL AVA context and preserves Thai UTF-
   assert.equal(repository.records[0].customerName, "สุวัจชัย รสิกวรรณ");
   assert.equal(repository.records[0].callbackNumber, "0652936493");
   assert.equal(repository.records[0].callbackNumberE164, "+66652936493");
-  assert.equal(repository.records[0].customerIntent, "Purchase Insurance");
-  assert.equal(repository.records[0].productInterest, "EV Drive Care");
+  assert.equal(repository.records[0].customerIntent, "POLICY_COVERAGE");
+  assert.equal(
+    repository.records[0].productInterest,
+    "Accident Usage Protection, Motor Smart 3+",
+  );
   assert.equal(
     repository.records[0].customerQuestion,
-    "ต้องการซื้อ EV Drive Care และให้เจ้าหน้าที่ติดต่อกลับ",
+    "ต้องการสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ทั้ง 2 ฉบับ",
   );
   assert.equal(
     repository.records[0].conversationSummary,
-    "ลูกค้าสนใจซื้อ EV Drive Care และต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อดำเนินการซื้อ",
+    "ลูกค้าต้องการให้เจ้าหน้าที่ติดต่อกลับเพื่อสอบถามรายละเอียดความคุ้มครองของกรมธรรม์ Accident Usage Protection และ Motor Smart 3+",
   );
   assert.equal(
     repository.records[0].scheduledTimeThai,
     result.scheduledTimeThai,
   );
-  assert.equal(repository.records[0].sourceChannel, "DIGITAL");
+  assert.equal(repository.records[0].sourceChannel, "VOICE");
   assert.equal(
     repository.records[0].scheduledTimeLocal,
     "2026-11-11T14:10:00+07:00",
@@ -303,11 +320,18 @@ test("creates callback with complete DIGITAL AVA context and preserves Thai UTF-
         message.includes("Callback scheduled") &&
         message.includes("callbackId=genesys-conversation-123") &&
         message.includes("scheduledTimeUtc=2026-11-11T07:10:00.000Z") &&
-        message.includes("sourceChannel=DIGITAL") &&
+        message.includes("sourceChannel=VOICE") &&
+        message.includes("conversationDetails=true") &&
         message.includes("hasCustomerName=true") &&
         message.includes("hasIntent=true") &&
         message.includes("hasProductInterest=true"),
     ),
+  );
+  assert.deepEqual(mock.counts(), { tokenCalls: 1, callbackCalls: 1 });
+  const logs = logMessages.join("\n");
+  assert.doesNotMatch(
+    logs,
+    /test-access-token|never-log-this|0652936493|Authorization|Basic/i,
   );
 });
 
@@ -325,7 +349,15 @@ test("omitted or generic customer name is blank participant data; source default
       now: () => new Date("2026-11-11T07:00:00.000Z"),
       logger: { info() {}, warn() {}, error() {} },
     });
-    await scheduler.schedule(validInput({ callbackUserName }));
+    await scheduler.schedule(
+      validInput({
+        callbackUserName,
+        customerIntent: "",
+        productInterest: "",
+        customerQuestion: "",
+        conversationSummary: "",
+      }),
+    );
     assert.equal((sent?.data as Record<string, unknown>).AVA_CUSTOMER_NAME, "");
     assert.equal(
       (sent?.data as Record<string, unknown>).AVA_SOURCE_CHANNEL,
@@ -335,7 +367,50 @@ test("omitted or generic customer name is blank participant data; source default
       sent?.callbackUserName,
       callbackUserName?.trim() || "Customer",
     );
+    const data = sent?.data as Record<string, unknown>;
+    for (const label of [
+      "Customer Name",
+      "Intent",
+      "Product Interest",
+      "Customer Request",
+      "AVA Summary",
+      "Source Channel",
+    ])
+      assert.equal(
+        `conversationDetails.participantData.${label}` in data,
+        false,
+        `${label} should be omitted when its source value is unavailable`,
+      );
+    assert.equal(
+      data["conversationDetails.participantData.Callback Phone"],
+      "identifier:0652936493",
+    );
+    assert.equal(
+      data["conversationDetails.participantData.Callback Time"],
+      "text:11 พฤศจิกายน 2569 เวลา 14:10 น.",
+    );
   }
+});
+
+test("maps DIGITAL source channel to an enum Conversation Details value", async () => {
+  let sent: Record<string, unknown> | undefined;
+  const scheduler = createGenesysCallbackScheduler({
+    config,
+    repository: memoryRepository(),
+    fetchImpl: makeFetchMock((payload) => {
+      sent = payload;
+      return Response.json({ conversation: { id: "digital-callback" } });
+    }).fetchMock,
+    now: () => new Date("2026-11-11T07:00:00.000Z"),
+    logger: { info() {}, warn() {}, error() {} },
+  });
+  await scheduler.schedule(validInput({ sourceChannel: "digital" }));
+  assert.equal(
+    (sent?.data as Record<string, unknown>)[
+      "conversationDetails.participantData.Source Channel"
+    ],
+    "enum:DIGITAL",
+  );
 });
 
 test("keeps a Thai display phone when input is already E.164", async () => {
