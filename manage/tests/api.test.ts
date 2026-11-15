@@ -292,6 +292,24 @@ test(
         assert.equal(postStringLookup.status, 200);
         assert.deepEqual(await postStringLookup.json(), stringResult);
       }
+      const postBodyStringLookup = await request(
+        "/api/admin/customers/by-phone-short",
+        "POST",
+        { phone: "+66812345678" },
+        undefined,
+        lookupAuth,
+      );
+      assert.equal(postBodyStringLookup.status, 200);
+      assert.deepEqual(await postBodyStringLookup.json(), stringResult);
+      const queryOverridesBodyLookup = await request(
+        "/api/admin/customers/by-phone-short?phone=%2B66812345678",
+        "POST",
+        { phone: "+66899999999" },
+        undefined,
+        lookupAuth,
+      );
+      assert.equal(queryOverridesBodyLookup.status, 200);
+      assert.deepEqual(await queryOverridesBodyLookup.json(), stringResult);
       const invalidStringLookup = await request(
         "/api/admin/customers/by-phone-string?phone=020001111",
         "GET",

@@ -258,7 +258,9 @@ const sendCustomerByPhoneString: RequestHandler = async (request, response) => {
   response.setHeader("Cache-Control", "no-store");
   response.vary("Cookie, Authorization");
 
-  const phone = request.query.phone;
+  const phone =
+    request.query.phone ??
+    (request.method === "POST" ? request.body?.phone : undefined);
   if (typeof phone !== "string" || !isValidPhone(phone)) {
     response
       .status(400)
