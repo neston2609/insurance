@@ -65,6 +65,33 @@ Example response:
 
 The response example is abbreviated; each policy includes all stored policy fields and the full linked product record.
 
+## Find a customer's policy summary as a string
+
+```http
+GET https://mfecinsure.demohub24.com/api/admin/customers/by-phone-string?phone=0818376355
+Authorization: Basic <base64(username:password)>
+```
+
+This endpoint uses the same Management Basic Auth/session, Thai phone normalization, HTTPS, rate limiting, and no-cache behavior as `by-phone`. It returns the customer's full name, stored phone number, total number of policies, and one short string containing a description for every policy. Policy summaries are separated by `|`; no policy array is returned.
+
+```sh
+curl --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \
+  'https://mfecinsure.demohub24.com/api/admin/customers/by-phone-string?phone=%2B66818376355'
+```
+
+Example response:
+
+```json
+{
+  "customerName": "สมชาย ตัวอย่าง",
+  "phone": "+66812345678",
+  "totalPolicies": 2,
+  "policySummary": "กรมธรรม์ Motorcycle Protect+ สำหรับรถ Honda PCX 160 1กข1234 | กรมธรรม์ MFEC Motor One สำหรับรถ BYD Dolphin กท1030"
+}
+```
+
+Invalid or missing phone numbers return `400`; a valid phone with no matching customer returns `404`; missing or invalid credentials return `401`.
+
 ## Get customers
 
 ```http

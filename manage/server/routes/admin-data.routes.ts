@@ -56,7 +56,9 @@ adminDataRouter.use((request, response, next) => {
     (request.method === "GET" &&
       ["/customers/all", "/products/all"].includes(request.path)) ||
     ((request.method === "GET" || request.method === "POST") &&
-      request.path === "/customers/by-phone") ||
+      ["/customers/by-phone", "/customers/by-phone-string"].includes(
+        request.path,
+      )) ||
     (request.method === "POST" &&
       request.path === "/genesys/schedule-callback") ||
     (request.method === "PATCH" &&
@@ -184,6 +186,17 @@ adminDataRouter.get(
     response.json({ items, total: items.length });
   },
 );
+async function findCustomerByPhone(phone: string) {
+  const normalizedPhone = normalizeThaiPhone(phone);
+  return (await customers.all()).find((item) => {
+    try {
+      return normalizeThaiPhone(item.phone) === normalizedPhone;
+    } catch {
+      return false;
+    }
+  });
+}
+
 async function sendCustomerByPhone(phone: unknown, response: Response) {
   response.setHeader("Cache-Control", "no-store");
   response.vary("Cookie, Authorization");
@@ -195,14 +208,7 @@ async function sendCustomerByPhone(phone: unknown, response: Response) {
     return;
   }
 
-  const normalizedPhone = normalizeThaiPhone(phone);
-  const customer = (await customers.all()).find((item) => {
-    try {
-      return normalizeThaiPhone(item.phone) === normalizedPhone;
-    } catch {
-      return false;
-    }
-  });
+  const customer = await findCustomerByPhone(phone);
   if (!customer) {
     response.status(404).json({ message: "Customer not found" });
     return;
@@ -244,6 +250,65 @@ adminDataRouter.post(
   requireManagementAuth,
   async (request, response) => {
     await sendCustomerByPhone(request.body?.phone, response);
+  },
+);
+adminDataRouter.get(
+  "/customers/by-phone-string",
+  policyReadLimiter,
+  requireManagementAuth,
+  async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.vary("Cookie, Authorization");
+
+    const phone = request.query.phone;
+    if (typeof phone !== "string" || !isValidPhone(phone)) {
+      response
+        .status(400)
+        .json({ message: "A valid Thai mobile phone is required" });
+      return;
+    }
+
+    const customer = await findCustomerByPhone(phone);
+    if (!customer) {
+      response.status(404).json({ message: "Customer not found" });
+      return;
+    }
+
+    const [allProducts, allPolicies] = await Promise.all([
+      products.all(),
+      policies.all(),
+    ]);
+    const productMap = new Map(
+      allProducts.map((product) => [product.productId, product]),
+    );
+    const customerPolicies = allPolicies.filter(
+      (policy) => policy.customerId === customer.customerId,
+    );
+    const policySummary = customerPolicies
+      .map((policy) => {
+        const productName =
+          productMap.get(policy.productId)?.productName || "ไม่ระบุชื่อ";
+        const vehicleDetails = [
+          policy.vehicle.brand,
+          policy.vehicle.model,
+          policy.vehicle.licensePlate,
+        ]
+          .map((value) => value.trim())
+          .filter(Boolean)
+          .join(" ");
+        return `กรมธรรม์ ${productName} สำหรับรถ ${vehicleDetails}`;
+      })
+      .join(" | ");
+
+    response.json({
+      customerName: [customer.firstName, customer.lastName]
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join(" "),
+      phone: customer.phone,
+      totalPolicies: customerPolicies.length,
+      policySummary,
+    });
   },
 );
 adminDataRouter.get("/customers/:id/360", async (request, response) => {

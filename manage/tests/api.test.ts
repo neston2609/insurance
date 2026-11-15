@@ -197,6 +197,12 @@ test(
         401,
         "phone lookup requires Management authentication",
       );
+      assert.equal(
+        (await request("/api/admin/customers/by-phone-string?phone=0812345678"))
+          .status,
+        401,
+        "string phone lookup requires Management authentication",
+      );
       for (const phone of ["+66812345678", "66812345678", "0812345678"]) {
         const lookup = await request(
           `/api/admin/customers/by-phone?phone=${encodeURIComponent(phone)}`,
@@ -229,6 +235,54 @@ test(
           "each matching policy includes its policy and product details",
         );
       }
+      const stringLookup = await request(
+        "/api/admin/customers/by-phone-string?phone=%2B66812345678",
+        "GET",
+        undefined,
+        undefined,
+        lookupAuth,
+      );
+      assert.equal(stringLookup.status, 200);
+      assert.equal(stringLookup.headers.get("cache-control"), "no-store");
+      assert.match(stringLookup.headers.get("vary") || "", /Authorization/);
+      const stringResult = await stringLookup.json();
+      assert.deepEqual(Object.keys(stringResult).sort(), [
+        "customerName",
+        "phone",
+        "policySummary",
+        "totalPolicies",
+      ]);
+      assert.equal(stringResult.customerName, "สมชาย ตัวอย่าง");
+      assert.equal(stringResult.phone, "+66812345678");
+      assert.equal(stringResult.totalPolicies, 2);
+      assert.equal(typeof stringResult.policySummary, "string");
+      const policyDescriptions = stringResult.policySummary.split(" | ");
+      assert.equal(policyDescriptions.length, stringResult.totalPolicies);
+      assert.ok(
+        policyDescriptions.every(
+          (description: string) =>
+            description.startsWith("กรมธรรม์ ") &&
+            description.includes(" สำหรับรถ "),
+        ),
+        "summary is a single string with one compact description per policy",
+      );
+      assert.match(stringResult.policySummary, /Honda PCX 160 1กข1234/);
+      const invalidStringLookup = await request(
+        "/api/admin/customers/by-phone-string?phone=020001111",
+        "GET",
+        undefined,
+        undefined,
+        lookupAuth,
+      );
+      assert.equal(invalidStringLookup.status, 400);
+      const missingStringLookup = await request(
+        "/api/admin/customers/by-phone-string?phone=0899999999",
+        "GET",
+        undefined,
+        undefined,
+        lookupAuth,
+      );
+      assert.equal(missingStringLookup.status, 404);
       const postLookup = await request(
         "/api/admin/customers/by-phone",
         "POST",
