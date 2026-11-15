@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import { Router, type RequestHandler, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import {
   daysUntilExpiry,
@@ -56,9 +56,11 @@ adminDataRouter.use((request, response, next) => {
     (request.method === "GET" &&
       ["/customers/all", "/products/all"].includes(request.path)) ||
     ((request.method === "GET" || request.method === "POST") &&
-      ["/customers/by-phone", "/customers/by-phone-string"].includes(
-        request.path,
-      )) ||
+      [
+        "/customers/by-phone",
+        "/customers/by-phone-string",
+        "/customers/by-phone-short",
+      ].includes(request.path)) ||
     (request.method === "POST" &&
       request.path === "/genesys/schedule-callback") ||
     (request.method === "PATCH" &&
@@ -252,64 +254,72 @@ adminDataRouter.post(
     await sendCustomerByPhone(request.body?.phone, response);
   },
 );
+const sendCustomerByPhoneString: RequestHandler = async (request, response) => {
+  response.setHeader("Cache-Control", "no-store");
+  response.vary("Cookie, Authorization");
+
+  const phone = request.query.phone;
+  if (typeof phone !== "string" || !isValidPhone(phone)) {
+    response
+      .status(400)
+      .json({ message: "A valid Thai mobile phone is required" });
+    return;
+  }
+
+  const customer = await findCustomerByPhone(phone);
+  if (!customer) {
+    response.status(404).json({ message: "Customer not found" });
+    return;
+  }
+
+  const [allProducts, allPolicies] = await Promise.all([
+    products.all(),
+    policies.all(),
+  ]);
+  const productMap = new Map(
+    allProducts.map((product) => [product.productId, product]),
+  );
+  const customerPolicies = allPolicies.filter(
+    (policy) => policy.customerId === customer.customerId,
+  );
+  const policySummary = customerPolicies
+    .map((policy) => {
+      const productName =
+        productMap.get(policy.productId)?.productName || "ไม่ระบุชื่อ";
+      const vehicleDetails = [
+        policy.vehicle.brand,
+        policy.vehicle.model,
+        policy.vehicle.licensePlate,
+      ]
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join(" ");
+      return `กรมธรรม์ ${productName} สำหรับรถ ${vehicleDetails}`;
+    })
+    .join(" | ");
+
+  response.json({
+    customerName: [customer.firstName, customer.lastName]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join(" "),
+    phone: customer.phone,
+    totalPolicies: customerPolicies.length,
+    policySummary,
+  });
+};
+
 adminDataRouter.get(
   "/customers/by-phone-string",
   policyReadLimiter,
   requireManagementAuth,
-  async (request, response) => {
-    response.setHeader("Cache-Control", "no-store");
-    response.vary("Cookie, Authorization");
-
-    const phone = request.query.phone;
-    if (typeof phone !== "string" || !isValidPhone(phone)) {
-      response
-        .status(400)
-        .json({ message: "A valid Thai mobile phone is required" });
-      return;
-    }
-
-    const customer = await findCustomerByPhone(phone);
-    if (!customer) {
-      response.status(404).json({ message: "Customer not found" });
-      return;
-    }
-
-    const [allProducts, allPolicies] = await Promise.all([
-      products.all(),
-      policies.all(),
-    ]);
-    const productMap = new Map(
-      allProducts.map((product) => [product.productId, product]),
-    );
-    const customerPolicies = allPolicies.filter(
-      (policy) => policy.customerId === customer.customerId,
-    );
-    const policySummary = customerPolicies
-      .map((policy) => {
-        const productName =
-          productMap.get(policy.productId)?.productName || "ไม่ระบุชื่อ";
-        const vehicleDetails = [
-          policy.vehicle.brand,
-          policy.vehicle.model,
-          policy.vehicle.licensePlate,
-        ]
-          .map((value) => value.trim())
-          .filter(Boolean)
-          .join(" ");
-        return `กรมธรรม์ ${productName} สำหรับรถ ${vehicleDetails}`;
-      })
-      .join(" | ");
-
-    response.json({
-      customerName: [customer.firstName, customer.lastName]
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .join(" "),
-      phone: customer.phone,
-      totalPolicies: customerPolicies.length,
-      policySummary,
-    });
-  },
+  sendCustomerByPhoneString,
+);
+adminDataRouter.post(
+  ["/customers/by-phone-string", "/customers/by-phone-short"],
+  policyReadLimiter,
+  requireManagementAuth,
+  sendCustomerByPhoneString,
 );
 adminDataRouter.get("/customers/:id/360", async (request, response) => {
   response.json(await getCustomer360(request.params.id));

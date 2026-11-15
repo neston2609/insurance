@@ -74,6 +74,14 @@ Authorization: Basic <base64(username:password)>
 
 This endpoint uses the same Management Basic Auth/session, Thai phone normalization, HTTPS, rate limiting, and no-cache behavior as `by-phone`. It returns the customer's full name, stored phone number, total number of policies, and one short string containing a description for every policy. Policy summaries are separated by `|`; no policy array is returned.
 
+`GET /customers/by-phone-string` remains supported. For clients that require `POST`, both `/customers/by-phone-string` and the shorter alias `/customers/by-phone-short` accept the phone in the query string (not in the JSON body):
+
+```sh
+curl --location --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \
+  --request POST \
+  'https://mfecinsure.demohub24.com/api/admin/customers/by-phone-short?phone=0652936493'
+```
+
 ```sh
 curl --user "$MANAGE_USERNAME:$MANAGE_PASSWORD" \
   'https://mfecinsure.demohub24.com/api/admin/customers/by-phone-string?phone=%2B66818376355'

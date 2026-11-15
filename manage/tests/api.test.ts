@@ -203,6 +203,17 @@ test(
         401,
         "string phone lookup requires Management authentication",
       );
+      assert.equal(
+        (
+          await request(
+            "/api/admin/customers/by-phone-short?phone=0812345678",
+            "POST",
+            undefined,
+          )
+        ).status,
+        401,
+        "short POST alias requires Management authentication",
+      );
       for (const phone of ["+66812345678", "66812345678", "0812345678"]) {
         const lookup = await request(
           `/api/admin/customers/by-phone?phone=${encodeURIComponent(phone)}`,
@@ -267,6 +278,20 @@ test(
         "summary is a single string with one compact description per policy",
       );
       assert.match(stringResult.policySummary, /Honda PCX 160 1กข1234/);
+      for (const path of [
+        "/api/admin/customers/by-phone-string",
+        "/api/admin/customers/by-phone-short",
+      ]) {
+        const postStringLookup = await request(
+          `${path}?phone=%2B66812345678`,
+          "POST",
+          { ignoredBodyPhone: "0899999999" },
+          undefined,
+          lookupAuth,
+        );
+        assert.equal(postStringLookup.status, 200);
+        assert.deepEqual(await postStringLookup.json(), stringResult);
+      }
       const invalidStringLookup = await request(
         "/api/admin/customers/by-phone-string?phone=020001111",
         "GET",
