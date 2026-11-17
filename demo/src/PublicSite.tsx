@@ -83,7 +83,7 @@ export function PublicSite() {
               <ShieldCheck size={23} />
             </span>
             <span>
-              MFEC <b>Insurrance</b>
+              MFEC <b>Insurance</b>
             </span>
           </a>
           <button
@@ -147,7 +147,7 @@ export function PublicSite() {
         <div className="public-container footer-grid">
           <div>
             <div className="footer-logo">
-              MFEC <b>Insurrance</b>
+              MFEC <b>Insurance</b>
             </div>
             <p>
               ทางเลือกประกันภัยรถยนต์และรถจักรยานยนต์ที่เข้าใจง่าย
@@ -169,7 +169,7 @@ export function PublicSite() {
           </div>
         </div>
         <div className="footer-bottom public-container">
-          © {new Date().getFullYear()} MFEC Insurrance · Demo application
+          © {new Date().getFullYear()} MFEC Insurance · Demo application
         </div>
       </footer>
     </div>
@@ -203,7 +203,7 @@ function Home({ products }: { products: Product[] }) {
             </div>
           </div>
         </div>
-        <div className="hero-photo-credit">MFEC Insurrance Demo</div>
+        <div className="hero-photo-credit">MFEC Insurance Demo</div>
       </section>
       <section className="public-trust">
         <div className="public-container trust-grid">
@@ -841,7 +841,7 @@ function Contact({ products }: { products: Product[] }) {
             <span>ข้อมูลของคุณใช้เพื่อการติดต่อกลับเท่านั้น</span>
           </div>
           <div className="demo-note">
-            MFEC Insurrance เป็นระบบสาธิต ไม่มีการออกกรมธรรม์หรือเสนอขายจริง
+            MFEC Insurance เป็นระบบสาธิต ไม่มีการออกกรมธรรม์หรือเสนอขายจริง
           </div>
         </div>
         <div className="contact-form-wrap">
